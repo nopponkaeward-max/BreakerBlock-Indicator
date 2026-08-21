@@ -108,6 +108,73 @@
 
 ---
 
+## Breakblock_S — Pattern Reversal W/M + Re-Acc/Re-Dist + BreakBlock A++
+
+**สิ่งที่คอร์สสอน**
+- **Pattern Reversal W (กลับตัวขึ้น) / M (กลับตัวลง)** 4 แบบ: W2, W3, M2, M3
+  - ทุกแบบ: BOS + Valid Pullback → retest โซน Supply/Demand (Internal หรือ External) →
+    **ฟิลเตอร์ไหล่ 50%**: ไหล่ (สวิงที่ไม่ใช่จุด extreme) ต้องอยู่ฝั่ง extreme ของเส้นกลาง 50%
+    ของช่วง High↔Low (W: ไหล่ต่ำกว่า 50%, M: ไหล่สูงกว่า 50%) → BOS ทะลุโซน External = ยืนยัน
+  - W2/M2 = ไหล่มาก่อนจุด extreme (หัวมาทีหลัง), W3/M3 = ไหล่มาหลัง (reject)
+  - Fibo: 0% ที่ extreme, 100% ที่ระดับ retest — **TP ที่ 300% / 400% / 600%**
+- **Re-Distribution / Re-Accumulation**: หลังกลับตัว ราคาย่อหลอกกลับไปเคลียร์สวิง/โซน
+  imbalance และแตะ **neckline** (Low ของ M / High ของ W) แล้วค่อยทำ external LL/HH ใหม่
+  = "BOS ครั้งสุดท้าย" ยืนยันไปต่อ
+- **BreakBlock เกรด A++** = Demand RBR / Supply DBD / Hidden + **imbalance** →
+  Overlap → BOS (สูตร: `D/S/Hidden + IMBALANCE → OVERLAP → BOS = BREAKBLOCK`)
+  retest แล้วทำ High/Low ใหม่ = ยิ่งเพิ่มคุณภาพ
+
+**แปลงเป็นโค้ด**
+- ตรวจ W/M อัตโนมัติ ณ จังหวะ CHoCH: หาไหล่ (สวิงโลว์/ไฮลูกที่ไม่ใช่ extreme จาก 2 ลูกล่าสุด)
+  เทียบกับเส้นกลาง 50% ของช่วง CHoCH-level ↔ extreme → ผ่าน = label `W ✓` / `M ✓` + alert
+- ชุดเป้า Fibo เลือกได้: `4.123 / 6 (EP.5)` หรือ `300 / 400 / 600% (W/M)`
+- Re-Acc/Re-Dist: หลัง CHoCH เก็บ neckline = ระดับที่ถูกเบรก; ถ้าราคาย้อนมาแตะ
+  แล้วเกิด BOS ใหม่ตามเทรนด์ → label `Re-Acc ✓` / `Re-Dist ✓`
+
+## BREAKBLOCK STRATEGY DAY TRADE — Liquidity / Range / POI
+
+**สิ่งที่คอร์สสอน**
+- **Liquidity**: สวิง = รูปแบบ 3 แท่ง (แท่งกลางสูง/ต่ำสุดรวมไส้ สีไม่สำคัญ);
+  เหนือสวิงไฮมี Buy Stops = **BSL**, ใต้สวิงโลว์มี Sell Stops = **SSL** — ตลาดมัก
+  ไล่เก็บ (Stop Hunt) แล้วกลับตัว; **EQH/EQL** (เท่ากันหรือเกือบเท่า) = แหล่งสภาพคล่องใหญ่;
+  trendline ที่แตะ ≥3 ครั้งก็เป็นแหล่งสภาพคล่อง
+- **Trading Range**: **QM** = stop hunt + BOS สวนทาง; จุดเริ่ม range = Strong High/Low
+  (ควรยัน), ปลาย range = Weak High/Low = **ERL** (เป้าหมาย); สวิงภายใน = **IRL**;
+  วัฏจักร: ราคาวิ่งหา IRL → ERL → IRL วนไป; Range Traps 2 แบบ (leg ย่อ = trap,
+  failure swing = trap)
+- **POI 4 แบบ**: Orderblock (แท่งสวนสีสุดท้าย + ควรมี FVG, ตีกรอบจาก body),
+  Breaker Block (OB ที่ถูกทะลุ **1 ครั้ง**), Hidden Base (base ของ LTF ซ่อนใน HTF),
+  **BREAKBLOCK = RBR/DBD ที่ Overlap ถูกทะลุ ≥2 ครั้ง** (มองง่ายสุดบน line chart;
+  TF ≥M15 ใช้ body, ต่ำกว่า M15 รวมไส้)
+- กฎ POI: ต้องมีสภาพคล่องเหนือโซน (ฝั่ง buy) / ใต้โซน (ฝั่ง sell) และเลือกโซนที่
+  **ใกล้สภาพคล่องที่สุด**
+- Setup ทั้ง 3: HTF POI (M15/M30) + BREAKBLOCK LTF (M5/M3/M1) ข้างใน —
+  entry ที่ Breakblock, **SL ปลอดภัยสุด = พ้นโซน HTF POI**, **TP = สวิงล่าสุด**
+  (ตัวอย่าง RR 36.4 / 27.2 / 23.36)
+
+**แปลงเป็นโค้ด**
+- กลุ่ม **Liquidity**: pivot 3 แท่ง (รวมไส้) → เส้นจุดประ BSL/SSL ต่ออายุจนโดน sweep
+  (label `BSL ✕` / `SSL ✕`), ตรวจ **EQH/EQL** ด้วยค่าเผื่อ xATR (label `EQH $$$`)
+- โซน BreakBlock เปลี่ยน lifecycle: ไม่ลบเมื่อถูกทะลุ แต่**นับ Overlap ×N**
+  (ทะลุ 1 ครั้ง = Breaker Block, ≥2 = BREAKBLOCK แท้ตามคอร์ส) — ลบเมื่อเกิน
+  `maxOvl` หรือโซนแก่เกิน `zoneAge` แท่ง
+- Label `Strong High/Low` (จุดที่ควรยัน) และ `Weak High/Low (ERL)` (เป้าหมาย) หลัง CHoCH
+
+## REAPER BUY/SELL MODEL (จากภาพประกอบ)
+
+**สิ่งที่โมเดลสอน** (Phase A → B → C)
+1. **Phase A**: เบรก HIGH เดิม (buy) / LOW เดิม (sell) — โครงสร้างยืนยันทิศ
+2. **Phase B**: สร้าง Valid Pullback แล้ว**โดนเคลียร์** → ระดับ pullback ที่ถูกเคลียร์
+   คือ **Stoploss Retail** (จุดที่ SL ของรายย่อยกองอยู่)
+3. **Phase C**: ราคาลงต่ำกว่า (buy) / ขึ้นเหนือกว่า (sell) เส้น Stoploss Retail —
+   **หา Breakblock ในบริเวณนั้นเป็นจุดเข้า**
+
+**แปลงเป็นโค้ด**
+- เมื่อ IDM ถูก sweep → วาดเส้นแดง **Stoploss Retail** ที่ระดับนั้น ต่ออายุจนเกิด CHoCH
+  หรือมี sweep ใหม่ (+แสดงบน dashboard)
+- สัญญาณ **Reaper Buy/Sell** (รูปเพชร + alert): retest โซน BreakBlock ตามเทรนด์
+  โดยราคาอยู่ต่ำกว่า/เหนือกว่าเส้น Stoploss Retail = Phase C entry
+
 ## ข้อสมมติ / การตีความ (จุดที่คอร์สไม่ได้ระบุเป๊ะ จึงเลือกแนวทางเอง)
 
 1. **Swing break ขั้นที่ 3**: EP.2 เขียน "ปิดเหนือไส้" แต่ EP.3 ยืนยันว่า "ใช้ไส้ล้วนได้" —
@@ -120,6 +187,15 @@
 5. **Multi-TF**: คอร์สใช้วิธีสลับ TF ด้วยมือ (H1→M15→M5) — อินดิเคเตอร์คำนวณโครงสร้างบน
    TF ของชาร์ต และให้ HTF bias บน dashboard; การ refine โซนบน TF เล็กให้เปิดชาร์ต TF เล็ก
    โดยดู bias จาก dashboard ให้ตรงกัน
+6. **ไหล่ของ Pattern W/M**: ใช้สวิงโลว์/ไฮ 2 ลูกล่าสุดก่อน CHoCH — ลูกที่ไม่ใช่ extreme
+   คือไหล่; ช่วงวัด 50% = CHoCH-level ↔ extreme (คอร์สวัด High↔Low ของ pattern ซึ่ง
+   ใกล้เคียงกัน)
+7. **EQH/EQL**: เทียบเฉพาะ pivot ล่าสุดกับลูกก่อนหน้าด้วยค่าเผื่อ xATR (คอร์สใช้สายตา
+   แยก "relative equal" กับ "ไม่เท่า") — ปรับค่าเผื่อได้ใน settings
+8. **Trendline liquidity**: ยังไม่ implement (วาด trendline อัตโนมัติมีความกำกวมสูง)
+9. **Stoploss Retail**: ตีความจากภาพ Reaper Model = ระดับ IDM/Valid Pullback ล่าสุด
+   ที่ถูกเคลียร์ระหว่างเทรนด์ยังไม่เปลี่ยน (ภาพไม่ได้ระบุว่าเส้นหมดอายุเมื่อไร —
+   เลือกให้หมดอายุเมื่อเกิด CHoCH หรือมี sweep ใหม่แทนที่)
 
 ## แผนต่อยอด (ยังไม่ทำ)
 

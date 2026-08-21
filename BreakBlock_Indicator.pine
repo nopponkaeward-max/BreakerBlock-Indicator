@@ -1,5 +1,5 @@
 //@version=6
-indicator("BreakBlock Market Structure [EP.1-5]", "BreakBlock", overlay = true,
+indicator("BreakBlock Market Structure [EP.1-5 + DayTrade + Reaper]", "BreakBlock", overlay = true,
      max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -9,6 +9,10 @@ indicator("BreakBlock Market Structure [EP.1-5]", "BreakBlock", overlay = true,
 //   EP.03  Strong Swing / BOS / CHoCH (CHoCH ยืนยันด้วยการปิดแท่งทะลุไส้)
 //   EP.04  MSS + POI Zone + SR Shadow + BreakBlock
 //   EP.05  Real BreakBlock (ต้องมี FVG) + CHoCH Retest + Fibo Target 4.123 / 6
+//   Breakblock_S : Pattern Reversal W/M (ฟิลเตอร์ไหล่ 50%) + Re-Acc/Re-Dist + Fibo 300/400/600%
+//   Day Trade    : Liquidity BSL/SSL + EQH/EQL + Overlap ≥2 = BREAKBLOCK แท้
+//   Reaper Model : Phase A (BOS) → Phase B (Valid Pullback โดนเคลียร์ = Stoploss Retail)
+//                  → Phase C (entry ที่ Breakblock ใต้/เหนือ Stoploss Retail)
 // ดูรายละเอียดการตีความกฎแต่ละข้อใน docs/PLAN.md ของ repo
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -38,6 +42,8 @@ colPoi  = input.color(color.purple, "สี POI", group = g2)
 showBB     = input.bool(true, "แสดงโซน BreakBlock", group = g3)
 requireFVG = input.bool(true, "Real BreakBlock: ต้องมี FVG (EP.5)", tooltip = "โซนที่ leg ต้นกำเนิดไม่มี FVG จะถูกตัดทิ้ง", group = g3)
 maxBB      = input.int(8, "จำนวนโซนสูงสุด", minval = 1, maxval = 20, group = g3)
+maxOvl     = input.int(4, "Overlap สูงสุดก่อนลบโซน", minval = 1, maxval = 10, tooltip = "Day Trade: ทะลุ 1 ครั้ง = Breaker Block, ทะลุ ≥2 = BREAKBLOCK แท้ — โซนแสดงตัวนับ ×N", group = g3)
+zoneAge    = input.int(400, "อายุโซนสูงสุด (แท่ง)", minval = 50, maxval = 2000, group = g3)
 colBBBull  = input.color(color.teal, "โซน Bull", group = g3, inline = "c3")
 colBBBear  = input.color(color.red,  "โซน Bear", group = g3, inline = "c3")
 
@@ -47,7 +53,8 @@ maxSR    = input.int(5, "จำนวนแถบสูงสุด", minval = 1
 colSR    = input.color(color.silver, "สี SR Shadow", group = g4)
 
 showFib      = input.bool(true,  "แสดง Fibo Target หลัง CHoCH", group = g5)
-showMinorFib = input.bool(false, "แสดงระดับรอง 4.618 / 6.444 / 6.918", group = g5)
+fibPreset    = input.string("4.123 / 6 (EP.5)", "ชุดเป้าหมาย Fibo", options = ["4.123 / 6 (EP.5)", "300 / 400 / 600% (W/M)"], group = g5)
+showMinorFib = input.bool(false, "แสดงระดับรอง 4.618 / 6.444 / 6.918 (เฉพาะชุด EP.5)", group = g5)
 colFib       = input.color(color.orange, "สี Fibo", group = g5)
 
 showSignals = input.bool(true, "แสดงสัญลักษณ์สัญญาณบนชาร์ต", group = g6)
@@ -55,6 +62,19 @@ showDash    = input.bool(true, "แสดง Dashboard", group = g6)
 htf1        = input.timeframe("60",  "HTF Bias 1", group = g6)
 htf2        = input.timeframe("240", "HTF Bias 2", group = g6)
 dashPosS    = input.string("top_right", "ตำแหน่ง Dashboard", options = ["top_right", "top_left", "bottom_right", "bottom_left"], group = g6)
+
+g7 = "Liquidity (Day Trade)"
+showLiq = input.bool(true, "แสดงเส้น BSL / SSL (สวิง 3 แท่งรวมไส้)", group = g7)
+showEQ  = input.bool(true, "แสดง EQH / EQL", group = g7)
+maxLiq  = input.int(6, "จำนวนเส้นต่อฝั่งสูงสุด", minval = 1, maxval = 15, group = g7)
+eqTol   = input.float(0.25, "ค่าเผื่อ EQH/EQL (xATR14)", minval = 0.0, step = 0.05, group = g7)
+colLiq  = input.color(color.gray, "สีเส้น Liquidity", group = g7)
+
+g8 = "Reaper Model / Patterns"
+showReaper = input.bool(true, "แสดงเส้น Stoploss Retail + สัญญาณ Reaper", tooltip = "Phase A: BOS / Phase B: Valid Pullback โดนเคลียร์ = Stoploss Retail / Phase C: entry ที่ BreakBlock ใต้-เหนือเส้นนี้", group = g8)
+showWM     = input.bool(true, "ตรวจ Pattern Reversal W / M (ฟิลเตอร์ไหล่ 50%)", group = g8)
+showRange  = input.bool(true, "แสดง Strong / Weak High-Low หลัง CHoCH", group = g8)
+showReAcc  = input.bool(true, "แสดง Re-Accumulation / Re-Distribution", group = g8)
 
 dashPos = dashPosS == "top_right" ? position.top_right : dashPosS == "top_left" ? position.top_left : dashPosS == "bottom_right" ? position.bottom_right : position.bottom_left
 atrV    = ta.atr(14)
@@ -81,7 +101,13 @@ var bool  dFvg = false
 // โครงสร้าง (EP.3)
 var int   dir      = 0
 var float prevHi   = na
+var int   prevHiB  = 0
 var float prevLo   = na
+var int   prevLoB  = 0
+var float prevHi2  = na
+var int   prevHi2B = 0
+var float prevLo2  = na
+var int   prevLo2B = 0
 var float idm      = na
 var int   idmB     = 0
 var float idmTop   = na
@@ -113,15 +139,30 @@ var int[]   pdBar = array.new<int>()
 var int[]   pdCnt = array.new<int>()
 var bool[]  pdFvg = array.new<bool>()
 // BreakBlock zones
-var box[]  bbBox = array.new<box>()
-var int[]  bbDir = array.new<int>()
-var bool[] bbHit = array.new<bool>()
+var box[]  bbBox  = array.new<box>()
+var int[]  bbDir  = array.new<int>()
+var bool[] bbHit  = array.new<bool>()
+var int[]  bbOvl  = array.new<int>()
+var bool[] bbOut  = array.new<bool>()
+var bool[] bbStar = array.new<bool>()
+var int[]  bbBorn = array.new<int>()
 // SR Shadow bands
 var box[] srBox = array.new<box>()
 var int[] srDir = array.new<int>()
 // Fibo (EP.5)
 var line[]  fibLines = array.new<line>()
 var label[] fibLabs  = array.new<label>()
+// Liquidity: BSL/SSL lines (Day Trade)
+var line[]  liqHiLn = array.new<line>()
+var float[] liqHiLv = array.new<float>()
+var line[]  liqLoLn = array.new<line>()
+var float[] liqLoLv = array.new<float>()
+// Reaper Model / Re-Acc-Re-Dist
+var float slRetail    = na
+var line  slLine      = na
+var float neckLvl     = na
+var bool  neckTouched = false
+var int   neckB       = 0
 
 // ═════════════════════════ HELPER FUNCTIONS ═════════════════════════
 f_addLabel(lb) =>
@@ -175,10 +216,18 @@ f_bbCreate(d, top, bot, leftBar) =>
     array.push(bbBox, b)
     array.push(bbDir, d)
     array.push(bbHit, false)
+    array.push(bbOvl, 0)
+    array.push(bbOut, false)
+    array.push(bbStar, star)
+    array.push(bbBorn, bar_index)
     if array.size(bbBox) > maxBB
         box.delete(array.shift(bbBox))
         array.shift(bbDir)
         array.shift(bbHit)
+        array.shift(bbOvl)
+        array.shift(bbOut)
+        array.shift(bbStar)
+        array.shift(bbBorn)
 
 f_fibClear() =>
     while array.size(fibLines) > 0
@@ -187,12 +236,14 @@ f_fibClear() =>
         label.delete(array.pop(fibLabs))
 
 f_fibDraw(a, b) =>
-    // EP.5: ลาก 1 ที่จุด A (สวิงกลางที่ถูกเบรก) และ 0 ที่จุด B (extreme) — TP1=4.123, TP2=6
+    // ลาก 1 ที่จุด A (สวิงกลางที่ถูกเบรก) และ 0 ที่จุด B (extreme)
+    // ชุด EP.5: TP1=4.123, TP2=6 / ชุด W-M (Breakblock_S): TP 300%/400%/600%
     f_fibClear()
-    ks    = array.from(0.0, 1.0, 4.123, 4.618, 6.0, 6.444, 6.918)
-    names = array.from("0", "1", "TP1  4.123", "4.618", "TP2  6", "6.444", "6.918")
-    for i = 0 to 6
-        minor = i == 3 or i == 5 or i == 6
+    ep5   = fibPreset == "4.123 / 6 (EP.5)"
+    ks    = ep5 ? array.from(0.0, 1.0, 4.123, 4.618, 6.0, 6.444, 6.918) : array.from(0.0, 1.0, 3.0, 4.0, 6.0)
+    names = ep5 ? array.from("0", "1", "TP1  4.123", "4.618", "TP2  6", "6.444", "6.918") : array.from("0", "1", "TP1  300%", "TP2  400%", "TP3  600%")
+    for i = 0 to array.size(ks) - 1
+        minor = ep5 and (i == 3 or i == 5 or i == 6)
         anchor = i == 0 or i == 1
         if not minor or showMinorFib
             p  = b + (a - b) * array.get(ks, i)
@@ -364,6 +415,10 @@ evMssDn    = false
 evSweep    = false
 retestBuy  = false
 retestSell = false
+reaperBuy  = false
+reaperSell = false
+evPatW     = false
+evPatM     = false
 canConfirm = not confClose or barstate.isconfirmed
 
 if dir == 1
@@ -375,6 +430,13 @@ if dir == 1
             line.set_x2(idmLine, bar_index)
             f_addLine(idmLine, label.new(bar_index, idm, "IDM ✕", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colIdm, size = size.tiny))
             idmLine := na
+        // Reaper Phase B: pullback โดนเคลียร์ → ระดับนี้คือ Stoploss Retail
+        if showReaper
+            slRetail := idm
+            if not na(slLine)
+                line.delete(slLine)
+            slLine := line.new(idmB, idm, bar_index, idm, color = color.new(color.red, 25), width = 1)
+            f_addLabel(label.new(bar_index, idm, "SL Retail", style = label.style_label_up, color = color.new(color.black, 100), textcolor = color.new(color.red, 25), size = size.tiny))
     // MSS ขาลง = ปิดทะลุ pivot (IDM ถูกทำลาย → เกิด BreakBlock ฝั่งตรงข้าม, EP.4)
     if not mssDone and not na(idm) and close < idm and canConfirm
         evMssDn := true
@@ -392,6 +454,27 @@ if dir == 1
             f_addLine(line.new(chochB, chochL, bar_index, chochL, color = colBear, width = 2), label.new(bar_index, chochL, "CHoCH", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colBear, size = size.small))
         if showFib and runMaxH > chochL
             f_fibDraw(chochL, runMaxH)
+        // Pattern Reversal M (Breakblock_S): ไหล่อีกลูกต้องอยู่สูงกว่า 50% ของช่วง Low→High
+        if showWM
+            shoulder  = runMaxH == prevHi ? prevHi2 : prevHi
+            shoulderB = runMaxH == prevHi ? prevHi2B : prevHiB
+            mid50     = chochL + (runMaxH - chochL) * 0.5
+            if not na(shoulder) and shoulder > mid50
+                evPatM := true
+                f_addLabel(label.new(shoulderB, shoulder, "M ✓", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colBear, size = size.small))
+        // Range (Day Trade): จุดสูงสุด = Strong High ควรยัน, เป้า = Weak Low (ERL)
+        if showRange
+            f_addLabel(label.new(runMaxHb, runMaxH, "Strong High", style = label.style_label_down, color = color.new(color.black, 100), textcolor = color.new(colBear, 35), size = size.tiny))
+            if not na(prevLo)
+                f_addLabel(label.new(prevLoB, prevLo, "Weak Low (ERL)", style = label.style_label_up, color = color.new(color.black, 100), textcolor = color.new(colBear, 45), size = size.tiny))
+        // Neckline สำหรับ Re-Distribution = ระดับที่ถูกเบรก
+        neckLvl     := chochL
+        neckTouched := false
+        neckB       := bar_index
+        slRetail    := na
+        if not na(slLine)
+            line.delete(slLine)
+            slLine := na
         dir      := -1
         chochL   := runMaxH
         chochB   := runMaxHb
@@ -413,6 +496,12 @@ else if dir == -1
             line.set_x2(idmLine, bar_index)
             f_addLine(idmLine, label.new(bar_index, idm, "IDM ✕", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colIdm, size = size.tiny))
             idmLine := na
+        if showReaper
+            slRetail := idm
+            if not na(slLine)
+                line.delete(slLine)
+            slLine := line.new(idmB, idm, bar_index, idm, color = color.new(color.red, 25), width = 1)
+            f_addLabel(label.new(bar_index, idm, "SL Retail", style = label.style_label_down, color = color.new(color.black, 100), textcolor = color.new(color.red, 25), size = size.tiny))
     if not mssDone and not na(idm) and close > idm and canConfirm
         evMssUp := true
         mssDone := true
@@ -428,6 +517,26 @@ else if dir == -1
             f_addLine(line.new(chochB, chochL, bar_index, chochL, color = colBull, width = 2), label.new(bar_index, chochL, "CHoCH", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colBull, size = size.small))
         if showFib and chochL > runMinL
             f_fibDraw(chochL, runMinL)
+        // Pattern Reversal W (Breakblock_S): ไหล่อีกลูกต้องอยู่ต่ำกว่า 50% ของช่วง High→Low
+        if showWM
+            shoulder  = runMinL == prevLo ? prevLo2 : prevLo
+            shoulderB = runMinL == prevLo ? prevLo2B : prevLoB
+            mid50     = runMinL + (chochL - runMinL) * 0.5
+            if not na(shoulder) and shoulder < mid50
+                evPatW := true
+                f_addLabel(label.new(shoulderB, shoulder, "W ✓", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colBull, size = size.small))
+        if showRange
+            f_addLabel(label.new(runMinLb, runMinL, "Strong Low", style = label.style_label_up, color = color.new(color.black, 100), textcolor = color.new(colBull, 35), size = size.tiny))
+            if not na(prevHi)
+                f_addLabel(label.new(prevHiB, prevHi, "Weak High (ERL)", style = label.style_label_down, color = color.new(color.black, 100), textcolor = color.new(colBull, 45), size = size.tiny))
+        // Neckline สำหรับ Re-Accumulation = ระดับที่ถูกเบรก
+        neckLvl     := chochL
+        neckTouched := false
+        neckB       := bar_index
+        slRetail    := na
+        if not na(slLine)
+            line.delete(slLine)
+            slLine := na
         dir      := 1
         chochL   := runMinL
         chochB   := runMinLb
@@ -442,6 +551,15 @@ else if dir == -1
             line.delete(idmLine)
             idmLine := na
 
+// Reaper: ต่ออายุเส้น Stoploss Retail / ตรวจการแตะ neckline (Re-Acc / Re-Dist)
+if not na(slLine)
+    line.set_x2(slLine, bar_index)
+if not na(neckLvl) and bar_index > neckB
+    if dir == 1 and low <= neckLvl
+        neckTouched := true
+    if dir == -1 and high >= neckLvl
+        neckTouched := true
+
 // ── ประมวลผล swing ที่ยืนยันแล้ว (labels EP.1, BOS + IDM ใหม่ EP.2-3, โซน T1 EP.4-5) ──
 if upConf
     withTrend = dir >= 0
@@ -452,14 +570,25 @@ if upConf
         cH   = withTrend ? colBull : color.gray
         f_addLabel(label.new(uHb, uH, hTxt, style = label.style_label_down, color = color.new(color.black, 100), textcolor = cH, size = sz))
         f_addLabel(label.new(uPlb, uPl, lTxt, style = label.style_label_up, color = color.new(color.black, 100), textcolor = cH, size = sz))
-    prevHi := uH
-    prevLo := uPl
+    prevHi2  := prevHi
+    prevHi2B := prevHiB
+    prevLo2  := prevLo
+    prevLo2B := prevLoB
+    prevHi  := uH
+    prevHiB := uHb
+    prevLo  := uPl
+    prevLoB := uPlb
     if dir == 0
         dir := 1
     if dir == 1
         evBosUp := true
         if showBOS
             f_addLine(line.new(uHb, uH, bar_index, uH, color = colBull, width = 1), label.new(bar_index, uH, "BOS", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colBull, size = size.tiny))
+        // Re-Accumulation: หลัง CHoCH ขึ้น ราคาย่อลงหลอกแตะ neckline แล้วทำ BOS ใหม่
+        if showReAcc and neckTouched and not na(neckLvl)
+            f_addLabel(label.new(uPlb, uPl, "Re-Acc ✓", style = label.style_label_up, color = color.new(color.black, 100), textcolor = color.new(colBull, 20), size = size.tiny))
+            neckLvl     := na
+            neckTouched := false
         // Strong Swing: pullback ที่เคลียร์ IDM เดิม → จุดกำเนิดคือระดับ CHoCH ใหม่ (EP.3)
         if idmClr or na(chochL)
             chochL := uPl
@@ -494,14 +623,25 @@ if dnConf
         cH   = withTrend ? colBear : color.gray
         f_addLabel(label.new(dLb, dL, lTxt, style = label.style_label_up, color = color.new(color.black, 100), textcolor = cH, size = sz))
         f_addLabel(label.new(dPhb, dPh, hTxt, style = label.style_label_down, color = color.new(color.black, 100), textcolor = cH, size = sz))
-    prevLo := dL
-    prevHi := dPh
+    prevHi2  := prevHi
+    prevHi2B := prevHiB
+    prevLo2  := prevLo
+    prevLo2B := prevLoB
+    prevLo  := dL
+    prevLoB := dLb
+    prevHi  := dPh
+    prevHiB := dPhb
     if dir == 0
         dir := -1
     if dir == -1
         evBosDn := true
         if showBOS
             f_addLine(line.new(dLb, dL, bar_index, dL, color = colBear, width = 1), label.new(bar_index, dL, "BOS", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colBear, size = size.tiny))
+        // Re-Distribution: หลัง CHoCH ลง ราคาย่อขึ้นหลอกแตะ neckline แล้วทำ BOS ใหม่
+        if showReAcc and neckTouched and not na(neckLvl)
+            f_addLabel(label.new(dPhb, dPh, "Re-Dist ✓", style = label.style_label_down, color = color.new(color.black, 100), textcolor = color.new(colBear, 20), size = size.tiny))
+            neckLvl     := na
+            neckTouched := false
         if idmClr or na(chochL)
             chochL := dPh
             chochB := dPhb
@@ -593,28 +733,45 @@ while i1 < array.size(pdDir)
         array.set(pdCnt, i1, cnt)
         i1 += 1
 
-// ── จัดการโซน BreakBlock: retest ตามเทรนด์ = สัญญาณ (EP.5 "CHOCH RETEST") ──
+// ── จัดการโซน BreakBlock: นับ Overlap (Day Trade: ≥2 = BREAKBLOCK แท้) + retest ตามเทรนด์ ──
 i2 = 0
 while i2 < array.size(bbDir)
     bb   = array.get(bbBox, i2)
     bd   = array.get(bbDir, i2)
     bt   = box.get_top(bb)
     bbot = box.get_bottom(bb)
-    if bd == 1 ? close < bbot : close > bt
+    out  = bd == 1 ? close < bbot : close > bt
+    ovl  = array.get(bbOvl, i2)
+    if out and not array.get(bbOut, i2)
+        ovl += 1
+        array.set(bbOvl, i2, ovl)
+    array.set(bbOut, i2, out)
+    if ovl > maxOvl or bar_index - array.get(bbBorn, i2) > zoneAge
         box.delete(bb)
         array.remove(bbBox, i2)
         array.remove(bbDir, i2)
         array.remove(bbHit, i2)
+        array.remove(bbOvl, i2)
+        array.remove(bbOut, i2)
+        array.remove(bbStar, i2)
+        array.remove(bbBorn, i2)
     else
         box.set_right(bb, bar_index)
+        baseTxt = array.get(bbStar, i2) ? "BB ★" : "BB"
+        box.set_text(bb, ovl > 0 ? baseTxt + " ×" + str.tostring(ovl) : baseTxt)
         if not array.get(bbHit, i2)
-            touched = bd == 1 ? low <= bt : high >= bbot
+            touched = bd == 1 ? low <= bt and close > bbot : high >= bbot and close < bt
             if touched and bd == dir
                 array.set(bbHit, i2, true)
                 if bd == 1
                     retestBuy := true
+                    // Reaper Phase C: retest โซน Bull ที่ราคาลงไปต่ำกว่า Stoploss Retail
+                    if not na(slRetail) and low < slRetail
+                        reaperBuy := true
                 else
                     retestSell := true
+                    if not na(slRetail) and high > slRetail
+                        reaperSell := true
         i2 += 1
 
 // ── จัดการ POI zones ──
@@ -633,11 +790,57 @@ while i0 < array.size(poiBox)
         line.set_x2(array.get(poiMid, i0), bar_index)
         i0 += 1
 
+// ── Liquidity (Day Trade): สวิง 3 แท่งรวมไส้ → เส้น BSL/SSL จนกว่าจะโดน sweep + EQH/EQL ──
+ph = ta.pivothigh(1, 1)
+pl = ta.pivotlow(1, 1)
+if showLiq and not na(ph)
+    if showEQ and array.size(liqHiLv) > 0 and math.abs(ph - array.get(liqHiLv, array.size(liqHiLv) - 1)) <= eqTol * atrV
+        f_addLabel(label.new(bar_index - 1, ph, "EQH $$$", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colLiq, size = size.tiny))
+    array.push(liqHiLn, line.new(bar_index - 1, ph, bar_index, ph, color = color.new(colLiq, 45), style = line.style_dotted))
+    array.push(liqHiLv, ph)
+    if array.size(liqHiLn) > maxLiq
+        line.delete(array.shift(liqHiLn))
+        array.shift(liqHiLv)
+if showLiq and not na(pl)
+    if showEQ and array.size(liqLoLv) > 0 and math.abs(pl - array.get(liqLoLv, array.size(liqLoLv) - 1)) <= eqTol * atrV
+        f_addLabel(label.new(bar_index - 1, pl, "EQL $$$", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colLiq, size = size.tiny))
+    array.push(liqLoLn, line.new(bar_index - 1, pl, bar_index, pl, color = color.new(colLiq, 45), style = line.style_dotted))
+    array.push(liqLoLv, pl)
+    if array.size(liqLoLn) > maxLiq
+        line.delete(array.shift(liqLoLn))
+        array.shift(liqLoLv)
+iH = 0
+while iH < array.size(liqHiLn)
+    lvH = array.get(liqHiLv, iH)
+    if high > lvH
+        lnH = array.get(liqHiLn, iH)
+        line.set_x2(lnH, bar_index)
+        f_addLine(lnH, label.new(bar_index, lvH, "BSL ✕", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colLiq, size = size.tiny))
+        array.remove(liqHiLn, iH)
+        array.remove(liqHiLv, iH)
+    else
+        line.set_x2(array.get(liqHiLn, iH), bar_index)
+        iH += 1
+iS = 0
+while iS < array.size(liqLoLn)
+    lvS = array.get(liqLoLv, iS)
+    if low < lvS
+        lnS = array.get(liqLoLn, iS)
+        line.set_x2(lnS, bar_index)
+        f_addLine(lnS, label.new(bar_index, lvS, "SSL ✕", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colLiq, size = size.tiny))
+        array.remove(liqLoLn, iS)
+        array.remove(liqLoLv, iS)
+    else
+        line.set_x2(array.get(liqLoLn, iS), bar_index)
+        iS += 1
+
 // ═════════════════════════ SIGNALS / ALERTS / DASHBOARD ═════════════════════════
 plotshape(showSignals and evChoUp, "CHoCH Up", style = shape.triangleup, location = location.belowbar, color = colBull, size = size.tiny)
 plotshape(showSignals and evChoDn, "CHoCH Down", style = shape.triangledown, location = location.abovebar, color = colBear, size = size.tiny)
 plotshape(showSignals and retestBuy, "BB Retest Buy", style = shape.circle, location = location.belowbar, color = colBull, size = size.tiny)
 plotshape(showSignals and retestSell, "BB Retest Sell", style = shape.circle, location = location.abovebar, color = colBear, size = size.tiny)
+plotshape(showSignals and reaperBuy, "Reaper Buy", style = shape.diamond, location = location.belowbar, color = colBull, size = size.small)
+plotshape(showSignals and reaperSell, "Reaper Sell", style = shape.diamond, location = location.abovebar, color = colBear, size = size.small)
 
 alertcondition(evBosUp, "BOS Up", "BreakBlock: BOS ขาขึ้น — โครงสร้างเทรนด์ขึ้นต่อเนื่อง")
 alertcondition(evBosDn, "BOS Down", "BreakBlock: BOS ขาลง — โครงสร้างเทรนด์ลงต่อเนื่อง")
@@ -648,8 +851,12 @@ alertcondition(evChoDn, "CHoCH Down", "BreakBlock: CHoCH ขาลง — ปิ
 alertcondition(evSweep, "IDM Swept", "BreakBlock: IDM ถูกเคลียร์ (sweep) — ยืนยัน High/Low ของ External")
 alertcondition(retestBuy, "BB Retest Buy", "BreakBlock: ราคากลับมาทดสอบโซน Bull BreakBlock ตามเทรนด์")
 alertcondition(retestSell, "BB Retest Sell", "BreakBlock: ราคากลับมาทดสอบโซน Bear BreakBlock ตามเทรนด์")
+alertcondition(reaperBuy, "Reaper Buy", "BreakBlock: Reaper Buy — retest โซน Bull ต่ำกว่า Stoploss Retail")
+alertcondition(reaperSell, "Reaper Sell", "BreakBlock: Reaper Sell — retest โซน Bear เหนือ Stoploss Retail")
+alertcondition(evPatW, "Pattern W", "BreakBlock: Pattern Reversal W ยืนยัน (ไหล่ต่ำกว่า 50%)")
+alertcondition(evPatM, "Pattern M", "BreakBlock: Pattern Reversal M ยืนยัน (ไหล่สูงกว่า 50%)")
 
-var table dash = table.new(dashPos, 2, 6, bgcolor = color.new(color.black, 78), border_width = 1, border_color = color.new(color.gray, 72))
+var table dash = table.new(dashPos, 2, 7, bgcolor = color.new(color.black, 78), border_width = 1, border_color = color.new(color.gray, 72))
 if showDash and barstate.islast
     trTxt = dir == 1 ? "UP ▲" : dir == -1 ? "DOWN ▼" : "—"
     trCol = dir == 1 ? colBull : dir == -1 ? colBear : color.gray
@@ -671,3 +878,6 @@ if showDash and barstate.islast
     table.cell(dash, 1, 4, h2Txt, text_color = h2Col, text_size = size.small)
     table.cell(dash, 0, 5, "Zones", text_color = color.white, text_size = size.small)
     table.cell(dash, 1, 5, str.tostring(array.size(bbBox)) + " BB / " + str.tostring(array.size(srBox)) + " SR", text_color = color.silver, text_size = size.small)
+    slTxt = na(slRetail) ? "—" : str.tostring(slRetail, format.mintick)
+    table.cell(dash, 0, 6, "SL Retail", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 6, slTxt, text_color = color.new(color.red, 20), text_size = size.small)
