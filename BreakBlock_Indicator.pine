@@ -76,7 +76,22 @@ showWM     = input.bool(true, "ตรวจ Pattern Reversal W / M (ฟิลเ
 showRange  = input.bool(true, "แสดง Strong / Weak High-Low หลัง CHoCH", group = g8)
 showReAcc  = input.bool(true, "แสดง Re-Accumulation / Re-Distribution", group = g8)
 
-dashPos = dashPosS == "top_right" ? position.top_right : dashPosS == "top_left" ? position.top_left : dashPosS == "bottom_right" ? position.bottom_right : position.bottom_left
+g9 = "Trade Setup / Backtest"
+enableTrade = input.bool(true, "เปิด Trade Simulator + ตารางสถิติ", group = g9)
+entryMode   = input.string("BB Retest (ทุกสัญญาณ)", "สัญญาณเข้าเทรด", options = ["BB Retest (ทุกสัญญาณ)", "Reaper เท่านั้น"], group = g9)
+slMode      = input.string("พ้นโซน BreakBlock", "วิธีวาง SL", options = ["พ้นโซน BreakBlock", "พ้นระดับ CHoCH (ปลอดภัย)"], tooltip = "EP.5/Day Trade: SL พ้นโซน refine หรือพ้น HTF POI/Strong Swing", group = g9)
+slBufAtr    = input.float(0.1, "Buffer SL (xATR14)", minval = 0.0, step = 0.05, group = g9)
+tpMode      = input.string("Fixed RR", "วิธีตั้ง TP", options = ["Fixed RR", "สวิงล่าสุด (Day Trade)", "Fibo TP1"], group = g9)
+rrFixed     = input.float(3.0, "ค่า RR (โหมด Fixed RR)", minval = 0.5, step = 0.5, group = g9)
+sameBarLoss = input.bool(true, "แท่งเดียวชน SL+TP = นับแพ้ (conservative)", group = g9)
+drawTrade   = input.bool(true, "วาดเส้น Entry / SL / TP", group = g9)
+showStats   = input.bool(true, "แสดงตารางสถิติ Win/Loss", group = g9)
+statPosS    = input.string("bottom_left", "ตำแหน่งตารางสถิติ", options = ["top_right", "top_left", "bottom_right", "bottom_left"], group = g9)
+
+f_tablePos(s) =>
+    s == "top_right" ? position.top_right : s == "top_left" ? position.top_left : s == "bottom_right" ? position.bottom_right : position.bottom_left
+dashPos = f_tablePos(dashPosS)
+statPos = f_tablePos(statPosS)
 atrV    = ta.atr(14)
 
 // ═════════════════════════ GLOBAL STATE / STORAGE ═════════════════════════
@@ -163,6 +178,39 @@ var line  slLine      = na
 var float neckLvl     = na
 var bool  neckTouched = false
 var int   neckB       = 0
+// Trade simulator (backtest)
+var bool  tActive = false
+var int   tDir    = 0
+var float tEntry  = na
+var float tSL     = na
+var float tTP     = na
+var int   tEntryB = 0
+var bool  tReaper = false
+var line  tEntryLn = na
+var line  tSLLn    = na
+var line  tTPLn    = na
+var label tRRLab   = na
+var line[]  tHist = array.new<line>()
+// สถิติสะสม
+var int   nTrades = 0
+var int   nWin    = 0
+var int   nLoss   = 0
+var int   nWinL   = 0
+var int   nWinS   = 0
+var int   nLossL  = 0
+var int   nLossS  = 0
+var float grossWinR  = 0.0
+var float grossLossR = 0.0
+var float sumR       = 0.0
+var int   streak     = 0
+var int   bestWinStk  = 0
+var int   worstLosStk = 0
+// เก็บ geometry ของโซนที่ทริกเกอร์ retest (ไว้ตั้ง SL)
+var float sigTop = na
+var float sigBot = na
+// anchor ของ Fibo ล่าสุด (ไว้คำนวณ TP โหมด Fibo TP1)
+var float fibA = na
+var float fibB = na
 
 // ═════════════════════════ HELPER FUNCTIONS ═════════════════════════
 f_addLabel(lb) =>
@@ -234,6 +282,10 @@ f_fibClear() =>
         line.delete(array.pop(fibLines))
     while array.size(fibLabs) > 0
         label.delete(array.pop(fibLabs))
+
+f_statCell(t, r, k, v, vc) =>
+    table.cell(t, 0, r, k, text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(t, 1, r, v, text_color = vc, text_size = size.small, text_halign = text.align_right)
 
 f_fibDraw(a, b) =>
     // ลาก 1 ที่จุด A (สวิงกลางที่ถูกเบรก) และ 0 ที่จุด B (extreme)
@@ -452,6 +504,8 @@ if dir == 1
         evChoDn := true
         if showCHoCH
             f_addLine(line.new(chochB, chochL, bar_index, chochL, color = colBear, width = 2), label.new(bar_index, chochL, "CHoCH", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colBear, size = size.small))
+        fibA := chochL
+        fibB := runMaxH
         if showFib and runMaxH > chochL
             f_fibDraw(chochL, runMaxH)
         // Pattern Reversal M (Breakblock_S): ไหล่อีกลูกต้องอยู่สูงกว่า 50% ของช่วง Low→High
@@ -515,6 +569,8 @@ else if dir == -1
         evChoUp := true
         if showCHoCH
             f_addLine(line.new(chochB, chochL, bar_index, chochL, color = colBull, width = 2), label.new(bar_index, chochL, "CHoCH", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colBull, size = size.small))
+        fibA := chochL
+        fibB := runMinL
         if showFib and chochL > runMinL
             f_fibDraw(chochL, runMinL)
         // Pattern Reversal W (Breakblock_S): ไหล่อีกลูกต้องอยู่ต่ำกว่า 50% ของช่วง High→Low
@@ -763,6 +819,8 @@ while i2 < array.size(bbDir)
             touched = bd == 1 ? low <= bt and close > bbot : high >= bbot and close < bt
             if touched and bd == dir
                 array.set(bbHit, i2, true)
+                sigTop := bt
+                sigBot := bbot
                 if bd == 1
                     retestBuy := true
                     // Reaper Phase C: retest โซน Bull ที่ราคาลงไปต่ำกว่า Stoploss Retail
@@ -834,6 +892,99 @@ while iS < array.size(liqLoLn)
         line.set_x2(array.get(liqLoLn, iS), bar_index)
         iS += 1
 
+// ═════════════════════════ TRADE SIMULATOR / BACKTEST ═════════════════════════
+// กฎ Entry/SL/TP สังเคราะห์จากไฟล์: Entry = retest โซน BreakBlock (proximal),
+// SL = พ้นโซนฝั่ง distal (+buffer) หรือพ้น CHoCH/Strong Swing, TP = Fixed RR /
+// สวิงล่าสุด (Day Trade) / Fibo TP1 (EP.5 4.123 หรือ W-M 300%). เดินย้อนหลังทีละแท่ง
+// เพื่อดูว่า TP หรือ SL โดนก่อน แล้วสะสมสถิติ Win/Loss
+tExitWin = false
+tExitLos = false
+
+// 1) ตรวจการปิดของเทรดที่เปิดอยู่ (เช็คจากแท่งถัดจากแท่งเข้า)
+if enableTrade and tActive and bar_index > tEntryB
+    hitSL = tDir == 1 ? low <= tSL : high >= tSL
+    hitTP = tDir == 1 ? high >= tTP : low <= tTP
+    if hitSL or hitTP
+        win  = hitTP and (not hitSL or not sameBarLoss)
+        rMag = tDir == 1 ? (tTP - tEntry) / (tEntry - tSL) : (tEntry - tTP) / (tSL - tEntry)
+        nTrades += 1
+        if win
+            nWin      += 1
+            grossWinR += rMag
+            sumR      += rMag
+            streak    := streak > 0 ? streak + 1 : 1
+            tExitWin  := true
+            if tDir == 1
+                nWinL += 1
+            else
+                nWinS += 1
+        else
+            nLoss      += 1
+            grossLossR += 1.0
+            sumR       -= 1.0
+            streak     := streak < 0 ? streak - 1 : -1
+            tExitLos   := true
+            if tDir == 1
+                nLossL += 1
+            else
+                nLossS += 1
+        bestWinStk  := math.max(bestWinStk, streak)
+        worstLosStk := math.min(worstLosStk, streak)
+        if drawTrade and not na(tEntryLn)
+            line.set_x2(tEntryLn, bar_index)
+            line.set_x2(tSLLn, bar_index)
+            line.set_x2(tTPLn, bar_index)
+            oCol = win ? color.green : color.red
+            oTx  = win ? "✓ +" + str.tostring(rMag, "#.0") + "R" : "✗ -1R"
+            f_addLabel(label.new(bar_index, win ? tTP : tSL, oTx, style = label.style_label_left, color = color.new(color.black, 100), textcolor = oCol, size = size.tiny))
+        tActive := false
+
+// 2) เปิดเทรดใหม่เมื่อมีสัญญาณและไม่มีเทรดค้าง
+sigLong  = entryMode == "Reaper เท่านั้น" ? reaperBuy  : retestBuy
+sigShort = entryMode == "Reaper เท่านั้น" ? reaperSell : retestSell
+if enableTrade and not tActive and (sigLong or sigShort) and not na(sigTop) and not na(sigBot)
+    dirT   = sigLong ? 1 : -1
+    entryP = close
+    buffer = slBufAtr * atrV
+    safeSL = slMode == "พ้นระดับ CHoCH (ปลอดภัย)" and not na(chochL)
+    slP    = dirT == 1 ? (safeSL ? math.min(sigBot, chochL) : sigBot) - buffer : (safeSL ? math.max(sigTop, chochL) : sigTop) + buffer
+    risk   = dirT == 1 ? entryP - slP : slP - entryP
+    if risk > 0
+        mult = fibPreset == "4.123 / 6 (EP.5)" ? 4.123 : 3.0
+        tpP  = entryP + dirT * rrFixed * risk
+        if tpMode == "สวิงล่าสุด (Day Trade)"
+            cand  = dirT == 1 ? prevHi : prevLo
+            valid = not na(cand) and (dirT == 1 ? cand > entryP + risk * 0.5 : cand < entryP - risk * 0.5)
+            tpP := valid ? cand : entryP + dirT * rrFixed * risk
+        else if tpMode == "Fibo TP1"
+            fibTP = not na(fibA) and not na(fibB) ? fibB + (fibA - fibB) * mult : na
+            valid = not na(fibTP) and (dirT == 1 ? fibTP > entryP + risk * 0.5 : fibTP < entryP - risk * 0.5)
+            tpP := valid ? fibTP : entryP + dirT * rrFixed * risk
+        tActive := true
+        tDir    := dirT
+        tEntry  := entryP
+        tSL     := slP
+        tTP     := tpP
+        tEntryB := bar_index
+        tReaper := dirT == 1 ? reaperBuy : reaperSell
+        if drawTrade
+            rrShow  = dirT == 1 ? (tpP - entryP) / (entryP - slP) : (entryP - tpP) / (slP - entryP)
+            tEntryLn := line.new(bar_index, entryP, bar_index + 1, entryP, color = color.new(color.gray, 15), width = 1)
+            tSLLn    := line.new(bar_index, slP, bar_index + 1, slP, color = color.new(color.red, 5), style = line.style_dashed, width = 1)
+            tTPLn    := line.new(bar_index, tpP, bar_index + 1, tpP, color = color.new(color.green, 5), style = line.style_dashed, width = 1)
+            array.push(tHist, tEntryLn)
+            array.push(tHist, tSLLn)
+            array.push(tHist, tTPLn)
+            while array.size(tHist) > 90
+                line.delete(array.shift(tHist))
+            f_addLabel(label.new(bar_index, tpP, "TP " + str.tostring(rrShow, "#.0") + "R", style = label.style_label_left, color = color.new(color.black, 100), textcolor = color.new(color.green, 0), size = size.tiny))
+
+// ต่ออายุเส้นเทรดที่เปิดอยู่
+if enableTrade and tActive and drawTrade and not na(tEntryLn)
+    line.set_x2(tEntryLn, bar_index + 1)
+    line.set_x2(tSLLn, bar_index + 1)
+    line.set_x2(tTPLn, bar_index + 1)
+
 // ═════════════════════════ SIGNALS / ALERTS / DASHBOARD ═════════════════════════
 plotshape(showSignals and evChoUp, "CHoCH Up", style = shape.triangleup, location = location.belowbar, color = colBull, size = size.tiny)
 plotshape(showSignals and evChoDn, "CHoCH Down", style = shape.triangledown, location = location.abovebar, color = colBear, size = size.tiny)
@@ -855,6 +1006,8 @@ alertcondition(reaperBuy, "Reaper Buy", "BreakBlock: Reaper Buy — retest โ�
 alertcondition(reaperSell, "Reaper Sell", "BreakBlock: Reaper Sell — retest โซน Bear เหนือ Stoploss Retail")
 alertcondition(evPatW, "Pattern W", "BreakBlock: Pattern Reversal W ยืนยัน (ไหล่ต่ำกว่า 50%)")
 alertcondition(evPatM, "Pattern M", "BreakBlock: Pattern Reversal M ยืนยัน (ไหล่สูงกว่า 50%)")
+alertcondition(tExitWin, "Trade Win", "BreakBlock: เทรดปิดกำไร — ชน TP")
+alertcondition(tExitLos, "Trade Loss", "BreakBlock: เทรดปิดขาดทุน — ชน SL")
 
 var table dash = table.new(dashPos, 2, 7, bgcolor = color.new(color.black, 78), border_width = 1, border_color = color.new(color.gray, 72))
 if showDash and barstate.islast
@@ -881,3 +1034,24 @@ if showDash and barstate.islast
     slTxt = na(slRetail) ? "—" : str.tostring(slRetail, format.mintick)
     table.cell(dash, 0, 6, "SL Retail", text_color = color.white, text_size = size.small)
     table.cell(dash, 1, 6, slTxt, text_color = color.new(color.red, 20), text_size = size.small)
+
+// ── ตารางสถิติ Win/Loss ย้อนหลัง (Backtest) ──
+var table stat = table.new(statPos, 2, 11, bgcolor = color.new(color.black, 80), border_width = 1, border_color = color.new(color.gray, 72))
+if enableTrade and showStats and barstate.islast
+    winRate = nTrades > 0 ? nWin / nTrades * 100 : 0.0
+    avgWin  = nWin  > 0 ? grossWinR / nWin : 0.0
+    pf      = grossLossR > 0 ? grossWinR / grossLossR : (grossWinR > 0 ? 999.0 : 0.0)
+    wrCol   = winRate >= 50 ? colBull : winRate >= 35 ? color.orange : colBear
+    netCol  = sumR >= 0 ? colBull : colBear
+    table.cell(stat, 0, 0, "BreakBlock Backtest", text_color = color.white, text_size = size.small, text_halign = text.align_left)
+    table.cell(stat, 1, 0, tpMode == "Fixed RR" ? str.tostring(rrFixed, "#.0") + "R" : tpMode == "Fibo TP1" ? "Fibo" : "Swing", text_color = color.new(color.white, 20), text_size = size.small, text_halign = text.align_right)
+    f_statCell(stat, 1, "Trades", str.tostring(nTrades), color.white)
+    f_statCell(stat, 2, "Win / Loss", str.tostring(nWin) + " / " + str.tostring(nLoss), color.white)
+    f_statCell(stat, 3, "Win Rate", str.tostring(winRate, "#.0") + "%", wrCol)
+    f_statCell(stat, 4, "Avg Win", str.tostring(avgWin, "#.00") + "R", colBull)
+    f_statCell(stat, 5, "Profit Factor", str.tostring(pf, "#.00"), pf >= 1 ? colBull : colBear)
+    f_statCell(stat, 6, "Net R", (sumR >= 0 ? "+" : "") + str.tostring(sumR, "#.0") + "R", netCol)
+    f_statCell(stat, 7, "Long W/L", str.tostring(nWinL) + " / " + str.tostring(nLossL), color.new(colBull, 15))
+    f_statCell(stat, 8, "Short W/L", str.tostring(nWinS) + " / " + str.tostring(nLossS), color.new(colBear, 15))
+    f_statCell(stat, 9, "Best Win Streak", str.tostring(bestWinStk), colBull)
+    f_statCell(stat, 10, "Worst Loss Streak", str.tostring(worstLosStk), colBear)

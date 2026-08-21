@@ -175,6 +175,34 @@
 - สัญญาณ **Reaper Buy/Sell** (รูปเพชร + alert): retest โซน BreakBlock ตามเทรนด์
   โดยราคาอยู่ต่ำกว่า/เหนือกว่าเส้น Stoploss Retail = Phase C entry
 
+## Trade Setup + Backtest (จุด Entry/SL/TP + ตารางสถิติ Win/Loss)
+
+**กฎที่สังเคราะห์จากทุกไฟล์ + ข้อมูลเว็บ SMC** (ตรงกันหมด)
+- **Entry** = ราคากลับมา retest โซน BreakBlock ตามเทรนด์ (proximal) — เลือกได้ว่าใช้
+  ทุกสัญญาณ BB Retest หรือเฉพาะ Reaper (Phase C: ต่ำกว่า/เหนือ Stoploss Retail)
+- **SL** = พ้นโซนฝั่ง distal + buffer (xATR) — ตรงกับ EP.5 "SL พ้นโซน refine",
+  Day Trade "SL พ้น HTF POI/Strong Swing", เว็บ "stop beyond the block's range";
+  โหมด "พ้นระดับ CHoCH" = เลือกจุดที่ไกลกว่าเพื่อความปลอดภัย (Strong Swing invalidation)
+- **TP** 3 โหมด:
+  - **Fixed RR** (ค่าเริ่มต้น 3R) — เว็บยืนยัน SMC ใช้ 1:2–1:3 ขึ้นไป
+  - **สวิงล่าสุด** — Day Trade: "TP = Swing ล่าสุด" (สภาพคล่องถัดไป)
+  - **Fibo TP1** — EP.5: 4.123 / W-M: 300% (ลากจาก extreme→CHoCH level)
+
+**Trade Simulator (เดินย้อนหลัง)**
+- เปิดเทรดได้ครั้งละ 1 ไม้ (ไม่ซ้อน) เพื่อสถิติที่อ่านง่าย
+- ทุกแท่งหลังเข้า เช็คว่า high/low แตะ TP หรือ SL ก่อน — ถ้าแท่งเดียวแตะทั้งคู่
+  นับเป็นแพ้ (conservative, ปรับได้)
+- วาดเส้น Entry (เทา) / SL (แดง) / TP (เขียว) + label RR และผลลัพธ์ `✓ +xR` / `✗ -1R`
+
+**ตารางสถิติ Win/Loss** (มุมล่างซ้าย): Trades, Win/Loss, Win Rate %, Avg Win (R),
+Profit Factor, Net R, แยก Long/Short, Best Win Streak / Worst Loss Streak
+
+**ข้อจำกัดของ simulator** (บันทึกไว้ให้ชัด)
+- เป็นการจำลองแบบ 1 ไม้/เวลา ไม่มีค่าคอมมิชชัน/spread/slippage (ต่างจาก `strategy()`)
+- Entry ใช้ราคาปิดของแท่งสัญญาณ (จริง ๆ คอร์สเข้าที่ขอบโซน — ใกล้เคียง)
+- แท่ง realtime ล่าสุดอาจ repaint จนกว่าจะปิด; แท่งย้อนหลัง deterministic
+- ผลลัพธ์เป็นสถิติเชิงกลไกเพื่อประเมินระบบ ไม่ใช่ผลเทรดจริง
+
 ## ข้อสมมติ / การตีความ (จุดที่คอร์สไม่ได้ระบุเป๊ะ จึงเลือกแนวทางเอง)
 
 1. **Swing break ขั้นที่ 3**: EP.2 เขียน "ปิดเหนือไส้" แต่ EP.3 ยืนยันว่า "ใช้ไส้ล้วนได้" —

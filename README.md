@@ -35,6 +35,8 @@
 | Overlap Counter ×N | Day Trade | โซน BB ไม่ลบเมื่อถูกทะลุ — นับ ×N (≥2 = BREAKBLOCK แท้) |
 | Strong / Weak High-Low (ERL) | Day Trade | label จุดที่ควรยัน + เป้าหมายของ range หลัง CHoCH |
 | Reaper Model | ภาพประกอบคอร์ส | เส้น Stoploss Retail + สัญญาณเพชร Reaper Buy/Sell (Phase C) |
+| จุด Entry / SL / TP อัตโนมัติ | ทุกไฟล์ + SMC | วาดเส้น Entry/SL/TP + RR เมื่อมีสัญญาณเข้า |
+| Trade Simulator + สถิติ Win/Loss | Backtest | เดินย้อนหลัง เช็ค TP/SL โดนก่อน → ตารางสถิติ |
 | Dashboard | EP.5 workflow | Trend / IDM / CHoCH / HTF bias (H1, H4) / จำนวนโซน / SL Retail |
 
 ## วิธีใช้ตาม Model Setup ของคอร์ส (EP.5)
@@ -55,10 +57,28 @@
 3. **Phase C**: เมื่อราคาลงต่ำกว่า (buy) / ขึ้นเหนือ (sell) เส้นนี้และแตะโซน BreakBlock
    ตามเทรนด์ → สัญญาณ **เพชร Reaper Buy/Sell** + alert
 
+## Entry / SL / TP + ตารางสถิติ Win/Loss (Backtest)
+
+เปิดใช้ที่กลุ่ม **Trade Setup / Backtest** — เมื่อมีสัญญาณเข้า อินดิเคเตอร์จะวาด
+เส้น Entry (เทา) / SL (แดง) / TP (เขียว) พร้อม RR และเดินจำลองย้อนหลังว่าไม้นั้น
+ชน TP หรือ SL ก่อน แล้วสะสมลง **ตารางสถิติมุมล่างซ้าย**
+
+**กฎที่ใช้ (สังเคราะห์จากทุกไฟล์ + SMC มาตรฐาน):**
+- **Entry**: retest โซน BreakBlock ตามเทรนด์ (เลือก "ทุกสัญญาณ" หรือ "Reaper เท่านั้น")
+- **SL**: พ้นโซนฝั่งตรงข้าม + buffer (xATR) หรือเลือก "พ้นระดับ CHoCH" เพื่อความปลอดภัย
+- **TP**: `Fixed RR` (เริ่มต้น 3R) / `สวิงล่าสุด` (Day Trade) / `Fibo TP1` (EP.5 4.123 หรือ W-M 300%)
+
+**ตารางสถิติแสดง:** จำนวนเทรด, Win/Loss, Win Rate %, Avg Win (R), Profit Factor,
+Net R, แยก Long/Short, และ Best Win / Worst Loss Streak
+
+> ⚠️ เป็น simulator เชิงกลไก (1 ไม้/เวลา, ไม่คิด spread/คอมมิชชัน, แท่ง realtime อาจ
+> repaint) — ใช้ประเมินระบบคร่าว ๆ ไม่ใช่ผลเทรดจริง; ต้องการ backtest เต็มรูปให้ใช้
+> เวอร์ชัน `strategy()` (แผนต่อยอด)
+
 ## Alerts ที่มีให้
 
 `BOS Up/Down` · `MSS Bullish/Bearish` · `CHoCH Up/Down` · `IDM Swept` ·
-`BB Retest Buy/Sell` · `Reaper Buy/Sell` · `Pattern W/M` —
+`BB Retest Buy/Sell` · `Reaper Buy/Sell` · `Pattern W/M` · `Trade Win/Loss` —
 ตั้งผ่านเมนู Alert ของ TradingView ได้ทันที
 
 ## การตั้งค่าสำคัญ
