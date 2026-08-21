@@ -35,8 +35,11 @@
 | Overlap Counter ×N | Day Trade | โซน BB ไม่ลบเมื่อถูกทะลุ — นับ ×N (≥2 = BREAKBLOCK แท้) |
 | Strong / Weak High-Low (ERL) | Day Trade | label จุดที่ควรยัน + เป้าหมายของ range หลัง CHoCH |
 | Reaper Model | ภาพประกอบคอร์ส | เส้น Stoploss Retail + สัญญาณเพชร Reaper Buy/Sell (Phase C) |
-| จุด Entry / SL / TP อัตโนมัติ | ทุกไฟล์ + SMC | วาดเส้น Entry/SL/TP + RR เมื่อมีสัญญาณเข้า |
-| Trade Simulator + สถิติ Win/Loss | Backtest | เดินย้อนหลัง เช็ค TP/SL โดนก่อน → ตารางสถิติ |
+| จุด Entry / SL อัตโนมัติ | ทุกไฟล์ + SMC | วงกลมเขียว(buy)/แดง(sell) ที่ Entry + วงกลมแดงที่ SL + label โปร่งใส RR |
+| Trade Simulator | Backtest | เดินย้อนหลัง เช็ค TP/SL โดนก่อน เก็บผลพร้อม timestamp |
+| ตารางสถิติหลัก (Luxe) | Backtest | Winrate + แถบ ▰▱ · Profit Factor · Net R · Long/Short · Streak |
+| ตารางสรุปรายเดือน | Backtest | W-L · WR% · Net R · Streak แยกแต่ละเดือน (ไฮไลต์เดือนดีสุด ★) |
+| ตารางรายวัน | Backtest | W-L · WR% · Net R รายวันของเดือนเป้าหมาย |
 | Dashboard | EP.5 workflow | Trend / IDM / CHoCH / HTF bias (H1, H4) / จำนวนโซน / SL Retail |
 
 ## วิธีใช้ตาม Model Setup ของคอร์ส (EP.5)
@@ -68,8 +71,19 @@
 - **SL**: พ้นโซนฝั่งตรงข้าม + buffer (xATR) หรือเลือก "พ้นระดับ CHoCH" เพื่อความปลอดภัย
 - **TP**: `Fixed RR` (เริ่มต้น 3R) / `สวิงล่าสุด` (Day Trade) / `Fibo TP1` (EP.5 4.123 หรือ W-M 300%)
 
-**ตารางสถิติแสดง:** จำนวนเทรด, Win/Loss, Win Rate %, Avg Win (R), Profit Factor,
-Net R, แยก Long/Short, และ Best Win / Worst Loss Streak
+**การแสดงผลบนชาร์ต:** จุด Entry เป็นวงกลมเล็กสีเขียว (buy) / แดง (sell) พร้อม label
+โปร่งใสระบุทิศทาง + RR (+ ⟡Reaper ถ้าเป็นสัญญาณ Reaper), จุด SL เป็นวงกลมแดง,
+เมื่อปิดไม้มีวงกลม + `✓ +xR` (เขียว) / `✗ −1R` (แดง) ที่จุดออก
+
+**ตารางสถิติ 3 ชุด (ธีม Luxe — กรอบทอง กระจกเข้ม แถวสลับ):**
+1. **ตารางหลัก** — Trades, Win·Loss, Winrate + แถบ ▰▱, Avg Win, Profit Factor,
+   Net R, Long/Short W·L, Best/Worst Streak
+2. **รายเดือน** — ย้อนหลัง N เดือน (ปรับได้): MONTH · W-L · WR% · NET R · STREAK
+   พร้อมไฮไลต์เดือนที่ดีที่สุด (★) และแถว TOTAL
+3. **รายวัน** — วันที่ 1–31 ของเดือนเป้าหมาย (เลือกย้อนหลังกี่เดือนได้):
+   DATE · W-L · WR% · NET R + แถว TOTAL
+
+> ตั้ง **Timezone** ให้ตรงตลาด (ค่าเริ่มต้น Asia/Bangkok) เพื่อให้สถิติรายเดือน/วันถูกต้อง
 
 > ⚠️ เป็น simulator เชิงกลไก (1 ไม้/เวลา, ไม่คิด spread/คอมมิชชัน, แท่ง realtime อาจ
 > repaint) — ใช้ประเมินระบบคร่าว ๆ ไม่ใช่ผลเทรดจริง; ต้องการ backtest เต็มรูปให้ใช้

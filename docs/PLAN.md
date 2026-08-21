@@ -194,8 +194,21 @@
   นับเป็นแพ้ (conservative, ปรับได้)
 - วาดเส้น Entry (เทา) / SL (แดง) / TP (เขียว) + label RR และผลลัพธ์ `✓ +xR` / `✗ -1R`
 
-**ตารางสถิติ Win/Loss** (มุมล่างซ้าย): Trades, Win/Loss, Win Rate %, Avg Win (R),
-Profit Factor, Net R, แยก Long/Short, Best Win Streak / Worst Loss Streak
+**การแสดงผล (อ้างอิงสไตล์จาก V9.9_NOPPON_SessionBreak):**
+- จุด Entry = วงกลม `label.style_circle` เขียว(buy)/แดง(sell) + label โปร่งใส (กระจกดำ)
+  ระบุทิศ + RR; จุด SL = วงกลมแดง; จุดออก = วงกลม + `✓ +xR`/`✗ −1R` + tick line
+- **ธีม Luxe**: กรอบทอง (`frame_color` ทอง 42%), พื้นกระจกเข้ม, แถวสลับ (zebra),
+  หัวตาราง ◆, แถบ winrate 10 ช่อง `▰▱`, ไฮไลต์แถวดีสุดด้วย ★ + พื้นทอง
+
+**เก็บผลเทรดเป็น array** (`resIsWin`, `resR`, `resTime`, `resDir`) พร้อม timestamp
+ของแท่งเข้า → คำนวณสถิติทุกตารางจาก array นี้บนแท่งสุดท้าย (แปลงเดือน/วันด้วย
+`month()/dayofmonth()/year()` ตาม Timezone ที่ตั้ง — คีย์เดือน = `year*12+month`)
+
+**3 ตาราง:**
+1. **หลัก**: Trades, Win·Loss, Winrate + `▰▱`, Avg Win, Profit Factor, Net R,
+   Long/Short W·L, Best/Worst Streak
+2. **รายเดือน** (N เดือนย้อนหลัง): MONTH · W-L · WR% · NET R · STREAK + ★เดือนดีสุด + TOTAL
+3. **รายวัน** (เดือนเป้าหมาย): วันที่ 1–31 · W-L · WR% · NET R + TOTAL (วันไม่มีเทรด = แถวจาง)
 
 **ข้อจำกัดของ simulator** (บันทึกไว้ให้ชัด)
 - เป็นการจำลองแบบ 1 ไม้/เวลา ไม่มีค่าคอมมิชชัน/spread/slippage (ต่างจาก `strategy()`)
