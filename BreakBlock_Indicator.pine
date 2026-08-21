@@ -1,0 +1,673 @@
+//@version=6
+indicator("BreakBlock Market Structure [EP.1-5]", "BreakBlock", overlay = true,
+     max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE POWER OF BREAKBLOCK — รวมเนื้อหา EP.01–EP.05 เป็นอินดิเคเตอร์เดียว
+//   EP.01  Market Structure Basic   : HH/HL/LH/LL + Internal/External
+//   EP.02  Market Structure Advance : Valid Pullback + Inducement (IDM)
+//   EP.03  Strong Swing / BOS / CHoCH (CHoCH ยืนยันด้วยการปิดแท่งทะลุไส้)
+//   EP.04  MSS + POI Zone + SR Shadow + BreakBlock
+//   EP.05  Real BreakBlock (ต้องมี FVG) + CHoCH Retest + Fibo Target 4.123 / 6
+// ดูรายละเอียดการตีความกฎแต่ละข้อใน docs/PLAN.md ของ repo
+// ────────────────────────────────────────────────────────────────────────────
+
+// ═════════════════════════ INPUTS ═════════════════════════
+g1 = "Structure (EP.1-3)"
+g2 = "MSS / POI (EP.4)"
+g3 = "BreakBlock Zones (EP.4-5)"
+g4 = "SR Shadow (EP.4)"
+g5 = "Fibo Targets (EP.5)"
+g6 = "Dashboard / Signals"
+
+useCloseBreak = input.bool(false, "Swing break ใช้ราคาปิด (close)", tooltip = "EP.3: การยืนยัน swing valid pullback ใช้ไส้ (wick) ได้ — เปิดตัวเลือกนี้ถ้าต้องการให้เข้มขึ้นแบบ EP.2", group = g1)
+confClose     = input.bool(true,  "ยืนยัน MSS/CHoCH เมื่อปิดแท่งเท่านั้น", tooltip = "กันสัญญาณกระพริบระหว่างแท่ง realtime", group = g1)
+showSwing     = input.bool(true,  "แสดง Label HH / HL / LH / LL", group = g1)
+showInternal  = input.bool(false, "แสดง Internal swing (สวนเทรนด์)", tooltip = "EP.1: โครงสร้างรองที่ซ้อนอยู่ใน leg ของ External", group = g1)
+showIDM       = input.bool(true,  "แสดงเส้น IDM (Inducement)", group = g1)
+showBOS       = input.bool(true,  "แสดงเส้น BOS", group = g1)
+showCHoCH     = input.bool(true,  "แสดงเส้น CHoCH + ระดับเฝ้าระวัง", group = g1)
+colBull       = input.color(color.teal,   "Bull", group = g1, inline = "c1")
+colBear       = input.color(color.red,    "Bear", group = g1, inline = "c1")
+colIdm        = input.color(color.orange, "IDM",  group = g1, inline = "c1")
+
+showMSS = input.bool(true, "แสดงเส้น MSS", group = g2)
+showPOI = input.bool(true, "แสดง POI Zone (กล่อง + เส้นกลาง 50%)", group = g2)
+colPoi  = input.color(color.purple, "สี POI", group = g2)
+
+showBB     = input.bool(true, "แสดงโซน BreakBlock", group = g3)
+requireFVG = input.bool(true, "Real BreakBlock: ต้องมี FVG (EP.5)", tooltip = "โซนที่ leg ต้นกำเนิดไม่มี FVG จะถูกตัดทิ้ง", group = g3)
+maxBB      = input.int(8, "จำนวนโซนสูงสุด", minval = 1, maxval = 20, group = g3)
+colBBBull  = input.color(color.teal, "โซน Bull", group = g3, inline = "c3")
+colBBBear  = input.color(color.red,  "โซน Bear", group = g3, inline = "c3")
+
+showSR   = input.bool(true, "แสดงแถบ SR Shadow", group = g4)
+srMinAtr = input.float(0.1, "ความกว้างขั้นต่ำ (xATR14)", minval = 0.0, step = 0.05, group = g4)
+maxSR    = input.int(5, "จำนวนแถบสูงสุด", minval = 1, maxval = 15, group = g4)
+colSR    = input.color(color.silver, "สี SR Shadow", group = g4)
+
+showFib      = input.bool(true,  "แสดง Fibo Target หลัง CHoCH", group = g5)
+showMinorFib = input.bool(false, "แสดงระดับรอง 4.618 / 6.444 / 6.918", group = g5)
+colFib       = input.color(color.orange, "สี Fibo", group = g5)
+
+showSignals = input.bool(true, "แสดงสัญลักษณ์สัญญาณบนชาร์ต", group = g6)
+showDash    = input.bool(true, "แสดง Dashboard", group = g6)
+htf1        = input.timeframe("60",  "HTF Bias 1", group = g6)
+htf2        = input.timeframe("240", "HTF Bias 2", group = g6)
+dashPosS    = input.string("top_right", "ตำแหน่ง Dashboard", options = ["top_right", "top_left", "bottom_right", "bottom_left"], group = g6)
+
+dashPos = dashPosS == "top_right" ? position.top_right : dashPosS == "top_left" ? position.top_left : dashPosS == "bottom_right" ? position.bottom_right : position.bottom_left
+atrV    = ta.atr(14)
+
+// ═════════════════════════ GLOBAL STATE / STORAGE ═════════════════════════
+// swing detector ขาขึ้น (หา High + HL ตาม checklist valid pullback EP.2)
+var float uH   = high
+var int   uHb  = 0
+var float uHl  = low
+var bool  uP   = false
+var float uPl  = na
+var int   uPlb = 0
+var float uPlh = na
+var bool  uFvg = false
+// swing detector ขาลง (หา Low + LH)
+var float dL   = low
+var int   dLb  = 0
+var float dLh  = high
+var bool  dP   = false
+var float dPh  = na
+var int   dPhb = 0
+var float dPhl = na
+var bool  dFvg = false
+// โครงสร้าง (EP.3)
+var int   dir      = 0
+var float prevHi   = na
+var float prevLo   = na
+var float idm      = na
+var int   idmB     = 0
+var float idmTop   = na
+var float idmBot   = na
+var bool  idmClr   = false
+var bool  mssDone  = false
+var float chochL   = na
+var int   chochB   = 0
+var float runMaxH  = high
+var int   runMaxHb = 0
+var float runMinL  = low
+var int   runMinLb = 0
+var line  idmLine   = na
+var line  chochLine = na
+var float chochLPlot = na
+// พูลเก็บ drawing เพื่อคุมจำนวน
+var label[] swLabels = array.new<label>()
+var line[]  stLines  = array.new<line>()
+var label[] stLabels = array.new<label>()
+// POI zones (EP.4)
+var box[]  poiBox = array.new<box>()
+var line[] poiMid = array.new<line>()
+var int[]  poiDir = array.new<int>()
+// BreakBlock รอตรวจ FVG (finalize หลังทริกเกอร์ 3 แท่ง)
+var float[] pdTop = array.new<float>()
+var float[] pdBot = array.new<float>()
+var int[]   pdDir = array.new<int>()
+var int[]   pdBar = array.new<int>()
+var int[]   pdCnt = array.new<int>()
+var bool[]  pdFvg = array.new<bool>()
+// BreakBlock zones
+var box[]  bbBox = array.new<box>()
+var int[]  bbDir = array.new<int>()
+var bool[] bbHit = array.new<bool>()
+// SR Shadow bands
+var box[] srBox = array.new<box>()
+var int[] srDir = array.new<int>()
+// Fibo (EP.5)
+var line[]  fibLines = array.new<line>()
+var label[] fibLabs  = array.new<label>()
+
+// ═════════════════════════ HELPER FUNCTIONS ═════════════════════════
+f_addLabel(lb) =>
+    array.push(swLabels, lb)
+    if array.size(swLabels) > 200
+        label.delete(array.shift(swLabels))
+
+f_addLine(ln, lb) =>
+    array.push(stLines, ln)
+    array.push(stLabels, lb)
+    if array.size(stLines) > 120
+        line.delete(array.shift(stLines))
+        label.delete(array.shift(stLabels))
+
+f_poiAdd(d, top, bot, leftBar) =>
+    if top > bot
+        b = box.new(leftBar, top, bar_index, bot, border_color = color.new(colPoi, 55), bgcolor = color.new(colPoi, 88), text = "POI", text_color = color.new(colPoi, 30), text_size = size.tiny, text_halign = text.align_right)
+        m = line.new(leftBar, (top + bot) / 2, bar_index, (top + bot) / 2, color = color.new(colPoi, 35), style = line.style_dashed)
+        array.push(poiBox, b)
+        array.push(poiMid, m)
+        array.push(poiDir, d)
+        if array.size(poiBox) > 3
+            box.delete(array.shift(poiBox))
+            line.delete(array.shift(poiMid))
+            array.shift(poiDir)
+
+f_pendAdd(d, top, bot, leftBar, fvg0) =>
+    if top > bot
+        array.push(pdTop, top)
+        array.push(pdBot, bot)
+        array.push(pdDir, d)
+        array.push(pdBar, leftBar)
+        array.push(pdCnt, 3)
+        array.push(pdFvg, fvg0)
+
+f_srOverlap(top, bot) =>
+    ov = false
+    k = 0
+    while k < array.size(srBox)
+        sb = array.get(srBox, k)
+        if not (bot > box.get_top(sb) or top < box.get_bottom(sb))
+            ov := true
+        k += 1
+    ov
+
+f_bbCreate(d, top, bot, leftBar) =>
+    // EP.4: OVERLAP กับ SR Shadow = ประสิทธิภาพสูงขึ้น → ติดดาว
+    star = f_srOverlap(top, bot)
+    col  = d == 1 ? colBBBull : colBBBear
+    b = box.new(leftBar, top, bar_index, bot, border_color = color.new(col, 40), bgcolor = color.new(col, 82), text = star ? "BB ★" : "BB", text_color = color.new(col, 20), text_size = size.tiny, text_halign = text.align_right)
+    array.push(bbBox, b)
+    array.push(bbDir, d)
+    array.push(bbHit, false)
+    if array.size(bbBox) > maxBB
+        box.delete(array.shift(bbBox))
+        array.shift(bbDir)
+        array.shift(bbHit)
+
+f_fibClear() =>
+    while array.size(fibLines) > 0
+        line.delete(array.pop(fibLines))
+    while array.size(fibLabs) > 0
+        label.delete(array.pop(fibLabs))
+
+f_fibDraw(a, b) =>
+    // EP.5: ลาก 1 ที่จุด A (สวิงกลางที่ถูกเบรก) และ 0 ที่จุด B (extreme) — TP1=4.123, TP2=6
+    f_fibClear()
+    ks    = array.from(0.0, 1.0, 4.123, 4.618, 6.0, 6.444, 6.918)
+    names = array.from("0", "1", "TP1  4.123", "4.618", "TP2  6", "6.444", "6.918")
+    for i = 0 to 6
+        minor = i == 3 or i == 5 or i == 6
+        anchor = i == 0 or i == 1
+        if not minor or showMinorFib
+            p  = b + (a - b) * array.get(ks, i)
+            ln = line.new(bar_index, p, bar_index + 8, p, color = color.new(colFib, minor or anchor ? 65 : 25), width = minor or anchor ? 1 : 2, extend = extend.right)
+            lb = label.new(bar_index + 8, p, array.get(names, i), style = label.style_label_left, color = color.new(color.black, 100), textcolor = color.new(colFib, minor or anchor ? 45 : 0), size = size.tiny)
+            array.push(fibLines, ln)
+            array.push(fibLabs, lb)
+
+// state machine แบบย่อ (ไม่มีการวาด) สำหรับ HTF bias บน dashboard
+f_dir() =>
+    var float _uH  = high
+    var float _uHl = low
+    var bool  _uP  = false
+    var float _uPl = na
+    var float _dL  = low
+    var float _dLh = high
+    var bool  _dP  = false
+    var float _dPh = na
+    var int   _dir = 0
+    var float _idm = na
+    var bool  _clr = false
+    var float _cho = na
+    var float _mxH = high
+    var float _mnL = low
+    _upC = false
+    _dnC = false
+    if not _uP
+        if high > _uH
+            _uH  := high
+            _uHl := low
+        if low < _uHl
+            _uP  := true
+            _uPl := low
+    else
+        if low < _uPl
+            _uPl := low
+        if useCloseBreak ? close > _uH : high > _uH
+            _upC := true
+    if not _dP
+        if low < _dL
+            _dL  := low
+            _dLh := high
+        if high > _dLh
+            _dP  := true
+            _dPh := high
+    else
+        if high > _dPh
+            _dPh := high
+        if useCloseBreak ? close < _dL : low < _dL
+            _dnC := true
+    if high > _mxH
+        _mxH := high
+    if low < _mnL
+        _mnL := low
+    if _dir == 1
+        if not _clr and not na(_idm) and low < _idm
+            _clr := true
+        if not na(_cho) and close < _cho
+            _dir := -1
+            _cho := _mxH
+            _mxH := high
+            _mnL := low
+            _idm := na
+            _clr := false
+    else if _dir == -1
+        if not _clr and not na(_idm) and high > _idm
+            _clr := true
+        if not na(_cho) and close > _cho
+            _dir := 1
+            _cho := _mnL
+            _mxH := high
+            _mnL := low
+            _idm := na
+            _clr := false
+    if _upC
+        if _dir == 0
+            _dir := 1
+        if _dir == 1
+            if _clr or na(_cho)
+                _cho := _uPl
+            _idm := _uPl
+            _clr := false
+        _uH  := high
+        _uHl := low
+        _uP  := false
+        _uPl := na
+    if _dnC
+        if _dir == 0
+            _dir := -1
+        if _dir == -1
+            if _clr or na(_cho)
+                _cho := _dPh
+            _idm := _dPh
+            _clr := false
+        _dL  := low
+        _dLh := high
+        _dP  := false
+        _dPh := na
+    _dir
+
+htf1Dir = request.security(syminfo.tickerid, htf1, f_dir(), lookahead = barmerge.lookahead_off)
+htf2Dir = request.security(syminfo.tickerid, htf2, f_dir(), lookahead = barmerge.lookahead_off)
+
+// ═════════════════════════ ENGINE — ต่อแท่ง ═════════════════════════
+// FVG มาตรฐาน 3 แท่ง (EP.5: "แท่ง imbalance สร้างช่องว่างของราคา")
+bullFvg = low > high[2]
+bearFvg = high < low[2]
+
+// extreme สะสมของขาปัจจุบัน (ใช้เป็นจุด B ของ Fibo ตอนเกิด CHoCH)
+if high > runMaxH
+    runMaxH  := high
+    runMaxHb := bar_index
+if low < runMinL
+    runMinL  := low
+    runMinLb := bar_index
+
+// ── ตัวตรวจ Valid Pullback (EP.2/EP.3) ──
+// ขาขึ้น: 1) แท่งทำ HIGH สูงสุดรวมไส้  2) LOW ของแท่งนั้นโดนเบรก  3) เบรก HIGH กลับ
+upConf = false
+dnConf = false
+
+if not uP
+    if high > uH
+        uH  := high
+        uHb := bar_index
+        uHl := low
+    if low < uHl
+        uP   := true
+        uPl  := low
+        uPlb := bar_index
+        uPlh := high
+else
+    if low < uPl
+        uPl  := low
+        uPlb := bar_index
+        uPlh := high
+    if bullFvg
+        uFvg := true
+    if useCloseBreak ? close > uH : high > uH
+        upConf := true
+
+if not dP
+    if low < dL
+        dL  := low
+        dLb := bar_index
+        dLh := high
+    if high > dLh
+        dP   := true
+        dPh  := high
+        dPhb := bar_index
+        dPhl := low
+else
+    if high > dPh
+        dPh  := high
+        dPhb := bar_index
+        dPhl := low
+    if bearFvg
+        dFvg := true
+    if useCloseBreak ? close < dL : low < dL
+        dnConf := true
+
+// ── เหตุการณ์ระดับแท่ง: IDM sweep → MSS → CHoCH (EP.3/EP.4) ──
+evBosUp    = false
+evBosDn    = false
+evChoUp    = false
+evChoDn    = false
+evMssUp    = false
+evMssDn    = false
+evSweep    = false
+retestBuy  = false
+retestSell = false
+canConfirm = not confClose or barstate.isconfirmed
+
+if dir == 1
+    // เคลียร์ IDM ด้วยไส้ (EP.2: ยืนยัน High ของ External)
+    if not idmClr and not na(idm) and low < idm
+        idmClr  := true
+        evSweep := true
+        if showIDM and not na(idmLine)
+            line.set_x2(idmLine, bar_index)
+            f_addLine(idmLine, label.new(bar_index, idm, "IDM ✕", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colIdm, size = size.tiny))
+            idmLine := na
+    // MSS ขาลง = ปิดทะลุ pivot (IDM ถูกทำลาย → เกิด BreakBlock ฝั่งตรงข้าม, EP.4)
+    if not mssDone and not na(idm) and close < idm and canConfirm
+        evMssDn := true
+        mssDone := true
+        if showMSS
+            f_addLine(line.new(idmB, idm, bar_index, idm, color = colBear, width = 2), label.new(bar_index, idm, "MSS", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colBear, size = size.small))
+        if showPOI and not na(prevHi) and prevHi > idm
+            f_poiAdd(-1, prevHi, idm, idmB)
+        if showBB and not na(idmTop)
+            f_pendAdd(-1, idmTop, idmBot, idmB, false)
+    // CHoCH ขาลง = ปิดทะลุจุดกำเนิด Strong Swing (EP.3: ต้องปิดแท่งทะลุไส้)
+    if not na(chochL) and close < chochL and canConfirm
+        evChoDn := true
+        if showCHoCH
+            f_addLine(line.new(chochB, chochL, bar_index, chochL, color = colBear, width = 2), label.new(bar_index, chochL, "CHoCH", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colBear, size = size.small))
+        if showFib and runMaxH > chochL
+            f_fibDraw(chochL, runMaxH)
+        dir      := -1
+        chochL   := runMaxH
+        chochB   := runMaxHb
+        runMaxH  := high
+        runMaxHb := bar_index
+        runMinL  := low
+        runMinLb := bar_index
+        idm      := na
+        idmClr   := false
+        mssDone  := false
+        if not na(idmLine)
+            line.delete(idmLine)
+            idmLine := na
+else if dir == -1
+    if not idmClr and not na(idm) and high > idm
+        idmClr  := true
+        evSweep := true
+        if showIDM and not na(idmLine)
+            line.set_x2(idmLine, bar_index)
+            f_addLine(idmLine, label.new(bar_index, idm, "IDM ✕", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colIdm, size = size.tiny))
+            idmLine := na
+    if not mssDone and not na(idm) and close > idm and canConfirm
+        evMssUp := true
+        mssDone := true
+        if showMSS
+            f_addLine(line.new(idmB, idm, bar_index, idm, color = colBull, width = 2), label.new(bar_index, idm, "MSS", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colBull, size = size.small))
+        if showPOI and not na(prevLo) and idm > prevLo
+            f_poiAdd(1, idm, prevLo, idmB)
+        if showBB and not na(idmTop)
+            f_pendAdd(1, idmTop, idmBot, idmB, false)
+    if not na(chochL) and close > chochL and canConfirm
+        evChoUp := true
+        if showCHoCH
+            f_addLine(line.new(chochB, chochL, bar_index, chochL, color = colBull, width = 2), label.new(bar_index, chochL, "CHoCH", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colBull, size = size.small))
+        if showFib and chochL > runMinL
+            f_fibDraw(chochL, runMinL)
+        dir      := 1
+        chochL   := runMinL
+        chochB   := runMinLb
+        runMaxH  := high
+        runMaxHb := bar_index
+        runMinL  := low
+        runMinLb := bar_index
+        idm      := na
+        idmClr   := false
+        mssDone  := false
+        if not na(idmLine)
+            line.delete(idmLine)
+            idmLine := na
+
+// ── ประมวลผล swing ที่ยืนยันแล้ว (labels EP.1, BOS + IDM ใหม่ EP.2-3, โซน T1 EP.4-5) ──
+if upConf
+    withTrend = dir >= 0
+    if showSwing and (withTrend or showInternal)
+        hTxt = na(prevHi) or uH >= prevHi ? "HH" : "LH"
+        lTxt = na(prevLo) or uPl >= prevLo ? "HL" : "LL"
+        sz   = withTrend ? size.small : size.tiny
+        cH   = withTrend ? colBull : color.gray
+        f_addLabel(label.new(uHb, uH, hTxt, style = label.style_label_down, color = color.new(color.black, 100), textcolor = cH, size = sz))
+        f_addLabel(label.new(uPlb, uPl, lTxt, style = label.style_label_up, color = color.new(color.black, 100), textcolor = cH, size = sz))
+    prevHi := uH
+    prevLo := uPl
+    if dir == 0
+        dir := 1
+    if dir == 1
+        evBosUp := true
+        if showBOS
+            f_addLine(line.new(uHb, uH, bar_index, uH, color = colBull, width = 1), label.new(bar_index, uH, "BOS", style = label.style_label_down, color = color.new(color.black, 100), textcolor = colBull, size = size.tiny))
+        // Strong Swing: pullback ที่เคลียร์ IDM เดิม → จุดกำเนิดคือระดับ CHoCH ใหม่ (EP.3)
+        if idmClr or na(chochL)
+            chochL := uPl
+            chochB := uPlb
+        // IDM ย้ายไปสวิงล่าสุดเสมอ (EP.2)
+        if showIDM
+            if not na(idmLine)
+                line.delete(idmLine)
+            idmLine := line.new(uPlb, uPl, bar_index, uPl, color = colIdm, style = line.style_dotted, width = 1)
+        idm     := uPl
+        idmB    := uPlb
+        idmTop  := uPlh
+        idmBot  := uPl
+        idmClr  := false
+        mssDone := false
+        // T1: โครงสร้างเบรกขึ้นผ่านโซน pullback → BreakBlock ฝั่ง Bull (EP.4 หน้า 13 / EP.5)
+        if showBB
+            f_pendAdd(1, uPlh, uPl, uPlb, uFvg)
+    uH   := high
+    uHb  := bar_index
+    uHl  := low
+    uP   := false
+    uPl  := na
+    uFvg := false
+
+if dnConf
+    withTrend = dir <= 0
+    if showSwing and (withTrend or showInternal)
+        lTxt = na(prevLo) or dL <= prevLo ? "LL" : "HL"
+        hTxt = na(prevHi) or dPh <= prevHi ? "LH" : "HH"
+        sz   = withTrend ? size.small : size.tiny
+        cH   = withTrend ? colBear : color.gray
+        f_addLabel(label.new(dLb, dL, lTxt, style = label.style_label_up, color = color.new(color.black, 100), textcolor = cH, size = sz))
+        f_addLabel(label.new(dPhb, dPh, hTxt, style = label.style_label_down, color = color.new(color.black, 100), textcolor = cH, size = sz))
+    prevLo := dL
+    prevHi := dPh
+    if dir == 0
+        dir := -1
+    if dir == -1
+        evBosDn := true
+        if showBOS
+            f_addLine(line.new(dLb, dL, bar_index, dL, color = colBear, width = 1), label.new(bar_index, dL, "BOS", style = label.style_label_up, color = color.new(color.black, 100), textcolor = colBear, size = size.tiny))
+        if idmClr or na(chochL)
+            chochL := dPh
+            chochB := dPhb
+        if showIDM
+            if not na(idmLine)
+                line.delete(idmLine)
+            idmLine := line.new(dPhb, dPh, bar_index, dPh, color = colIdm, style = line.style_dotted, width = 1)
+        idm     := dPh
+        idmB    := dPhb
+        idmTop  := dPh
+        idmBot  := dPhl
+        idmClr  := false
+        mssDone := false
+        if showBB
+            f_pendAdd(-1, dPh, dPhl, dPhb, dFvg)
+    dL   := low
+    dLb  := bar_index
+    dLh  := high
+    dP   := false
+    dPh  := na
+    dFvg := false
+
+// เส้นเฝ้าระวังระดับ CHoCH ปัจจุบัน (จุดกำเนิด Strong Swing)
+if showCHoCH and not na(chochL)
+    if na(chochLine) or chochL != chochLPlot
+        if not na(chochLine)
+            line.delete(chochLine)
+        chochLine  := line.new(chochB, chochL, bar_index + 1, chochL, color = color.new(dir == 1 ? colBear : colBull, 30), style = line.style_dashed, width = 1)
+        chochLPlot := chochL
+    else
+        line.set_x2(chochLine, bar_index + 1)
+// ต่ออายุเส้น IDM ที่ยังไม่ถูก sweep
+if showIDM and not na(idmLine)
+    line.set_x2(idmLine, bar_index)
+
+// ── SR Shadow (EP.4): ช่องว่างของ line chart — ตีความเป็น gap ระหว่าง body ──
+bodyTop0 = math.max(open, close)
+bodyBot0 = math.min(open, close)
+bodyTop2 = math.max(open[2], close[2])
+bodyBot2 = math.min(open[2], close[2])
+if showSR and bodyBot0 - bodyTop2 > srMinAtr * atrV
+    b = box.new(bar_index - 2, bodyBot0, bar_index, bodyTop2, border_color = color.new(colSR, 70), bgcolor = color.new(colSR, 90), text = "SR", text_color = color.new(colSR, 45), text_size = size.tiny, text_halign = text.align_right)
+    array.push(srBox, b)
+    array.push(srDir, 1)
+    if array.size(srBox) > maxSR
+        box.delete(array.shift(srBox))
+        array.shift(srDir)
+if showSR and bodyBot2 - bodyTop0 > srMinAtr * atrV
+    b = box.new(bar_index - 2, bodyBot2, bar_index, bodyTop0, border_color = color.new(colSR, 70), bgcolor = color.new(colSR, 90), text = "SR", text_color = color.new(colSR, 45), text_size = size.tiny, text_halign = text.align_right)
+    array.push(srBox, b)
+    array.push(srDir, -1)
+    if array.size(srBox) > maxSR
+        box.delete(array.shift(srBox))
+        array.shift(srDir)
+
+i3 = 0
+while i3 < array.size(srBox)
+    sb = array.get(srBox, i3)
+    sd = array.get(srDir, i3)
+    if sd == 1 ? close < box.get_bottom(sb) : close > box.get_top(sb)
+        box.delete(sb)
+        array.remove(srBox, i3)
+        array.remove(srDir, i3)
+    else
+        box.set_right(sb, bar_index)
+        i3 += 1
+
+// ── finalize โซน BreakBlock ที่รอตรวจ FVG (EP.5: FVG คือ CONFIRM ว่าโซนมีพลัง) ──
+i1 = 0
+while i1 < array.size(pdDir)
+    pdd = array.get(pdDir, i1)
+    fv  = array.get(pdFvg, i1)
+    if pdd == 1 and bullFvg
+        fv := true
+    if pdd == -1 and bearFvg
+        fv := true
+    array.set(pdFvg, i1, fv)
+    cnt = array.get(pdCnt, i1) - 1
+    if cnt <= 0
+        if fv or not requireFVG
+            f_bbCreate(pdd, array.get(pdTop, i1), array.get(pdBot, i1), array.get(pdBar, i1))
+        array.remove(pdTop, i1)
+        array.remove(pdBot, i1)
+        array.remove(pdDir, i1)
+        array.remove(pdBar, i1)
+        array.remove(pdCnt, i1)
+        array.remove(pdFvg, i1)
+    else
+        array.set(pdCnt, i1, cnt)
+        i1 += 1
+
+// ── จัดการโซน BreakBlock: retest ตามเทรนด์ = สัญญาณ (EP.5 "CHOCH RETEST") ──
+i2 = 0
+while i2 < array.size(bbDir)
+    bb   = array.get(bbBox, i2)
+    bd   = array.get(bbDir, i2)
+    bt   = box.get_top(bb)
+    bbot = box.get_bottom(bb)
+    if bd == 1 ? close < bbot : close > bt
+        box.delete(bb)
+        array.remove(bbBox, i2)
+        array.remove(bbDir, i2)
+        array.remove(bbHit, i2)
+    else
+        box.set_right(bb, bar_index)
+        if not array.get(bbHit, i2)
+            touched = bd == 1 ? low <= bt : high >= bbot
+            if touched and bd == dir
+                array.set(bbHit, i2, true)
+                if bd == 1
+                    retestBuy := true
+                else
+                    retestSell := true
+        i2 += 1
+
+// ── จัดการ POI zones ──
+i0 = 0
+while i0 < array.size(poiBox)
+    pb = array.get(poiBox, i0)
+    pd = array.get(poiDir, i0)
+    if pd == -1 ? close > box.get_top(pb) : close < box.get_bottom(pb)
+        box.delete(pb)
+        line.delete(array.get(poiMid, i0))
+        array.remove(poiBox, i0)
+        array.remove(poiMid, i0)
+        array.remove(poiDir, i0)
+    else
+        box.set_right(pb, bar_index)
+        line.set_x2(array.get(poiMid, i0), bar_index)
+        i0 += 1
+
+// ═════════════════════════ SIGNALS / ALERTS / DASHBOARD ═════════════════════════
+plotshape(showSignals and evChoUp, "CHoCH Up", style = shape.triangleup, location = location.belowbar, color = colBull, size = size.tiny)
+plotshape(showSignals and evChoDn, "CHoCH Down", style = shape.triangledown, location = location.abovebar, color = colBear, size = size.tiny)
+plotshape(showSignals and retestBuy, "BB Retest Buy", style = shape.circle, location = location.belowbar, color = colBull, size = size.tiny)
+plotshape(showSignals and retestSell, "BB Retest Sell", style = shape.circle, location = location.abovebar, color = colBear, size = size.tiny)
+
+alertcondition(evBosUp, "BOS Up", "BreakBlock: BOS ขาขึ้น — โครงสร้างเทรนด์ขึ้นต่อเนื่อง")
+alertcondition(evBosDn, "BOS Down", "BreakBlock: BOS ขาลง — โครงสร้างเทรนด์ลงต่อเนื่อง")
+alertcondition(evMssUp, "MSS Bullish", "BreakBlock: MSS ขาขึ้น — ปิดทะลุ pivot, เริ่มมีสัญญาณกลับตัวขึ้น (รอ BOS ยืนยัน)")
+alertcondition(evMssDn, "MSS Bearish", "BreakBlock: MSS ขาลง — ปิดทะลุ pivot, เริ่มมีสัญญาณกลับตัวลง (รอ BOS ยืนยัน)")
+alertcondition(evChoUp, "CHoCH Up", "BreakBlock: CHoCH ขาขึ้น — ปิดแท่งทะลุจุดกำเนิด Strong Swing")
+alertcondition(evChoDn, "CHoCH Down", "BreakBlock: CHoCH ขาลง — ปิดแท่งทะลุจุดกำเนิด Strong Swing")
+alertcondition(evSweep, "IDM Swept", "BreakBlock: IDM ถูกเคลียร์ (sweep) — ยืนยัน High/Low ของ External")
+alertcondition(retestBuy, "BB Retest Buy", "BreakBlock: ราคากลับมาทดสอบโซน Bull BreakBlock ตามเทรนด์")
+alertcondition(retestSell, "BB Retest Sell", "BreakBlock: ราคากลับมาทดสอบโซน Bear BreakBlock ตามเทรนด์")
+
+var table dash = table.new(dashPos, 2, 6, bgcolor = color.new(color.black, 78), border_width = 1, border_color = color.new(color.gray, 72))
+if showDash and barstate.islast
+    trTxt = dir == 1 ? "UP ▲" : dir == -1 ? "DOWN ▼" : "—"
+    trCol = dir == 1 ? colBull : dir == -1 ? colBear : color.gray
+    table.cell(dash, 0, 0, "Trend", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 0, trTxt, text_color = trCol, text_size = size.small)
+    idmTxt = na(idm) ? "—" : str.tostring(idm, format.mintick) + (idmClr ? "  ✕" : "")
+    table.cell(dash, 0, 1, "IDM", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 1, idmTxt, text_color = colIdm, text_size = size.small)
+    choTxt = na(chochL) ? "—" : str.tostring(chochL, format.mintick)
+    table.cell(dash, 0, 2, "CHoCH lvl", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 2, choTxt, text_color = dir == 1 ? colBear : colBull, text_size = size.small)
+    h1Txt = htf1Dir == 1 ? "▲" : htf1Dir == -1 ? "▼" : "—"
+    h1Col = htf1Dir == 1 ? colBull : htf1Dir == -1 ? colBear : color.gray
+    table.cell(dash, 0, 3, "HTF " + htf1, text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 3, h1Txt, text_color = h1Col, text_size = size.small)
+    h2Txt = htf2Dir == 1 ? "▲" : htf2Dir == -1 ? "▼" : "—"
+    h2Col = htf2Dir == 1 ? colBull : htf2Dir == -1 ? colBear : color.gray
+    table.cell(dash, 0, 4, "HTF " + htf2, text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 4, h2Txt, text_color = h2Col, text_size = size.small)
+    table.cell(dash, 0, 5, "Zones", text_color = color.white, text_size = size.small)
+    table.cell(dash, 1, 5, str.tostring(array.size(bbBox)) + " BB / " + str.tostring(array.size(srBox)) + " SR", text_color = color.silver, text_size = size.small)
