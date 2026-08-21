@@ -87,15 +87,14 @@ sameBarLoss = input.bool(true, "แท่งเดียวชน SL+TP = นั
 drawTrade   = input.bool(true, "วาดวงกลม Entry / SL + Label", group = g9)
 statTZ      = input.string("Asia/Bangkok", "Timezone สำหรับสถิติรายเดือน/วัน", tooltip = "ใช้แปลง timestamp เป็นเดือน/วัน เช่น Asia/Bangkok, America/New_York", group = g9)
 
-posOpts     = ["top_right", "top_left", "top_center", "middle_right", "middle_left", "bottom_right", "bottom_center", "bottom_left"]
 showStats   = input.bool(true, "แสดงตารางสถิติหลัก", group = g9)
-statPosS    = input.string("bottom_left", "ตำแหน่งตารางหลัก", options = posOpts, group = g9)
+statPosS    = input.string("bottom_left", "ตำแหน่งตารางหลัก", options = ["top_right", "top_left", "top_center", "middle_right", "middle_left", "bottom_right", "bottom_center", "bottom_left"], group = g9)
 showMonTbl  = input.bool(true, "แสดงตารางสรุปรายเดือน", group = g9)
 statMonthsN = input.int(6, "จำนวนเดือนย้อนหลัง", minval = 2, maxval = 24, group = g9)
-monPosS     = input.string("bottom_center", "ตำแหน่งตารางรายเดือน", options = posOpts, group = g9)
+monPosS     = input.string("bottom_center", "ตำแหน่งตารางรายเดือน", options = ["top_right", "top_left", "top_center", "middle_right", "middle_left", "bottom_right", "bottom_center", "bottom_left"], group = g9)
 showDayTbl  = input.bool(true, "แสดงตารางรายวัน (รายเดือนล่าสุด)", group = g9)
 dayMonthOff = input.int(0, "ย้อนหลังกี่เดือน (0=เดือนล่าสุด)", minval = 0, maxval = 24, group = g9)
-dayPosS     = input.string("bottom_right", "ตำแหน่งตารางรายวัน", options = posOpts, group = g9)
+dayPosS     = input.string("bottom_right", "ตำแหน่งตารางรายวัน", options = ["top_right", "top_left", "top_center", "middle_right", "middle_left", "bottom_right", "bottom_center", "bottom_left"], group = g9)
 
 f_tablePos(s) =>
     s == "top_right" ? position.top_right : s == "top_left" ? position.top_left : s == "top_center" ? position.top_center : s == "middle_right" ? position.middle_right : s == "middle_left" ? position.middle_left : s == "bottom_right" ? position.bottom_right : s == "bottom_center" ? position.bottom_center : position.bottom_left
